@@ -11,7 +11,7 @@ import { collection, getFirestore } from 'firebase/firestore';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseApp initializeApp = ({
+const firebaseApp, initializeApp = ({
   apiKey: "AIzaSyCOaOWgmWZACwroiwMk8PgZ3FkouTFf7zs",
   authDomain: "nextgenmarketplace-3c041.firebaseapp.com",
   projectId: "nextgenmarketplace-3c041",
@@ -22,7 +22,7 @@ const firebaseApp initializeApp = ({
 });
 
 // Initialize Firebase
-const app = initializeApp(firebaseConfig);
+const app = initializeApp(firebaseApp);
 const analytics = getAnalytics(app);
 const db = getFirestore(app);
 const auth = getAuth(app)
@@ -37,5 +37,4 @@ onAuthStateChanged(auth, user => {
         console.log('no user')
     }
 });
-
 
