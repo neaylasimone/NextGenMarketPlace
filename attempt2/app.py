@@ -12,20 +12,20 @@ import random
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
-import auth_service
-import user_service
-import item_service
-import search_service
+# import auth_service
+# import user_service
+# import item_service
+# import search_service
 
-firebase_config = {
-  apiKey: "AIzaSyCOaOWgmWZACwroiwMk8PgZ3FkouTFf7zs",
-  authDomain: "nextgenmarketplace-3c041.firebaseapp.com",
-  projectId: "nextgenmarketplace-3c041",
-  storageBucket: "nextgenmarketplace-3c041.firebasestorage.app",
-  messagingSenderId: "647637034752",
-  appId: "1:647637034752:web:d188f7820264ad6a10b5e5",
-  measurementId: "G-XKD3BYRLJM"
-};
+# firebase_config = {
+#   apiKey: "AIzaSyCOaOWgmWZACwroiwMk8PgZ3FkouTFf7zs",
+#   authDomain: "nextgenmarketplace-3c041.firebaseapp.com",
+#   projectId: "nextgenmarketplace-3c041",
+#   storageBucket: "nextgenmarketplace-3c041.firebasestorage.app",
+#   messagingSenderId: "647637034752",
+#   appId: "1:647637034752:web:d188f7820264ad6a10b5e5",
+#   measurementId: "G-XKD3BYRLJM"
+# };
 
 # Initialize the app
 st.set_page_config(
