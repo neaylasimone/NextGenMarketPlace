@@ -4,10 +4,10 @@ import json
 import os
 import pyrebase
 import datetime
-import auth_service
-import user_service
-import item_service
-import search_service
+#import auth_service
+#import user_service
+#import item_service
+#import search_service
 
 # Configure Streamlit page
 st.set_page_config(
@@ -28,6 +28,7 @@ firebase_config = {
 }
 
 # Initialize Firebase for client side (authentication)
+'''
 firebase = pyrebase.initialize_app(firebase_config)
 auth = firebase.auth()
 
@@ -38,7 +39,7 @@ if 'user_email' not in st.session_state:
     st.session_state.user_email = None
 if 'username' not in st.session_state:
     st.session_state.username = None
-
+'''
 # Login/Register functions
 def login(email, password):
     try:
