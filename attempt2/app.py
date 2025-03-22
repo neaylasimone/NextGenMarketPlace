@@ -3,8 +3,8 @@
 #streamlit run app.py
 
 import streamlit as st
-import firebase_admin
-from firebase_admin import credentials, firestore
+# import firebase_admin
+# from firebase_admin import credentials, firestore
 import pandas as pd
 from datetime import datetime
 import uuid
@@ -12,6 +12,20 @@ import random
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
+import auth_service
+import user_service
+import item_service
+import search_service
+
+firebase_config = {
+  apiKey: "AIzaSyCOaOWgmWZACwroiwMk8PgZ3FkouTFf7zs",
+  authDomain: "nextgenmarketplace-3c041.firebaseapp.com",
+  projectId: "nextgenmarketplace-3c041",
+  storageBucket: "nextgenmarketplace-3c041.firebasestorage.app",
+  messagingSenderId: "647637034752",
+  appId: "1:647637034752:web:d188f7820264ad6a10b5e5",
+  measurementId: "G-XKD3BYRLJM"
+};
 
 # Initialize the app
 st.set_page_config(
@@ -21,15 +35,15 @@ st.set_page_config(
 )
 
 # Initialize Firebase (in production, use proper auth credentials)
-@st.cache_resource
-def initialize_firebase():
-    try:
-        firebase_admin.get_app()
-    except ValueError:
-        # Use this in development, replace with actual credentials in production
-        cred = credentials.Certificate("firebase-key.json")
-        firebase_admin.initialize_app(cred)
-    return firestore.client()
+# @st.cache_resource
+# def initialize_firebase():
+#     try:
+#         firebase_admin.get_app()
+#     except ValueError:
+#         # Use this in development, replace with actual credentials in production
+#         cred = credentials.Certificate("firebase-key.json")
+#         firebase_admin.initialize_app(cred)
+#     return firestore.client()
 
 # Replace Firebase with mock object during testing
 class MockDB:
