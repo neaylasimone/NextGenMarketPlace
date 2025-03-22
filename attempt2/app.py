@@ -1,6 +1,6 @@
 import streamlit as st
-import firebase_admin
-from firebase_admin import credentials, firestore
+# import firebase_admin
+# from firebase_admin import credentials, firestore
 import pandas as pd
 from datetime import datetime
 import uuid
@@ -17,15 +17,15 @@ st.set_page_config(
 )
 
 # Initialize Firebase (in production, use proper auth credentials)
-@st.cache_resource
-def initialize_firebase():
-    try:
-        firebase_admin.get_app()
-    except ValueError:
-        # Use this in development, replace with actual credentials in production
-        cred = credentials.Certificate("firebase-key.json")
-        firebase_admin.initialize_app(cred)
-    return firestore.client()
+# @st.cache_resource
+# def initialize_firebase():
+#     try:
+#         firebase_admin.get_app()
+#     except ValueError:
+#         # Use this in development, replace with actual credentials in production
+#         cred = credentials.Certificate("firebase-key.json")
+#         firebase_admin.initialize_app(cred)
+#     return firestore.client()
 
 # Replace Firebase with mock object during testing
 class MockDB:
