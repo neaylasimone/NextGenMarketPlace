@@ -1,3 +1,7 @@
+#TO RUN:
+#pip3 install streamlit firebase-admin pandas scikit-learn numpy
+#streamlit run app.py
+
 import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
