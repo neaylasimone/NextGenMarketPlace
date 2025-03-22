@@ -15,7 +15,7 @@ import numpy as np
 
 # Initialize the app
 st.set_page_config(
-    page_title="CommuniTrade - Buy & Barter Marketplace",
+    page_title="NextGenMarket - Buy & Barter Marketplace",
     page_icon="🔄",
     layout="wide"
 )
