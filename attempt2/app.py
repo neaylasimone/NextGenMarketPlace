@@ -9,6 +9,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 
+
 # Initialize the app
 st.set_page_config(
     page_title="CommuniTrade - Buy & Barter Marketplace",
