@@ -10,6 +10,17 @@ import random
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
+import stripe
+import json
+import hmac
+import hashlib
+from urllib.parse import parse_qs
+
+# Initialize Stripe with your API key
+stripe.api_key = st.secrets["stripe"]["secret_key"]
+
+# Initialize webhook secret
+webhook_secret = st.secrets["stripe"]["webhook_secret"] if "webhook_secret" in st.secrets["stripe"] else None
 
 # Initialize the app with custom styling
 st.set_page_config(
@@ -277,7 +288,7 @@ def create_item_card(item, is_detail=False, show_trade_btn=True):
 def top_nav():
     # Create a container for the top navigation
     with st.container():
-        # Add a light gray background
+        # Add a light gray background and Gemini search bar styling
         st.markdown(
             """
             <style>
@@ -291,6 +302,46 @@ def top_nav():
                 right: 0;
                 z-index: 1000;
             }
+            
+            /* Gemini Search Bar Styling */
+            .gemini-search {
+                position: relative;
+                display: flex;
+                align-items: center;
+            }
+            
+            .gemini-search::after {
+                content: "Powered by Gemini";
+                position: absolute;
+                right: 10px;
+                top: 50%;
+                transform: translateY(-50%);
+                font-size: 0.8em;
+                color: #8A2BE2;
+                font-style: italic;
+                background: linear-gradient(45deg, #4B0082, #9400D3);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }
+            
+            /* Search Input Styling */
+            .stTextInput input {
+                padding-right: 130px !important;
+                border: 2px solid #E6E6FA !important;
+                border-radius: 20px !important;
+                background: linear-gradient(to right, #F8F8FF, #FFFFFF) !important;
+                transition: all 0.3s ease !important;
+            }
+            
+            .stTextInput input:focus {
+                border-color: #9400D3 !important;
+                box-shadow: 0 0 10px rgba(148, 0, 211, 0.2) !important;
+                background: white !important;
+            }
+            
+            .stTextInput input::placeholder {
+                color: #9B9B9B;
+            }
             </style>
             """,
             unsafe_allow_html=True
@@ -300,10 +351,12 @@ def top_nav():
         col1, col2, col3 = st.columns([2.5, 1, 1.5])
         
         with col1:
-            # Global search bar
-            search_query = st.text_input("🔍", placeholder="Search across all items...", 
+            # Global search bar with Gemini branding
+            st.markdown('<div class="gemini-search">', unsafe_allow_html=True)
+            search_query = st.text_input("🔍", placeholder="Search with Gemini AI...", 
                                        value=st.session_state.search_query,
                                        label_visibility="collapsed")
+            st.markdown('</div>', unsafe_allow_html=True)
             if search_query != st.session_state.search_query:
                 st.session_state.search_query = search_query
                 st.session_state.active_tab = "Browse"
@@ -491,7 +544,7 @@ def browse_marketplace():
             'username': 'CraftLover',
             'created_at': '2025-03-19',
             'trade_value': 50,
-            'image_url': 'https://images.unsplash.com/photo-1596360629200-740a8a92d5c4?ixlib=rb-1.2.1&auto=format&fit=crop&w=1050&q=80'
+            'image_url': 'https://images.unsplash.com/photo-1531491673595-4ca5c2f22108?ixlib=rb-1.2.1&auto=format&fit=crop&w=1050&q=80'
         },
         {
             'id': 'item_3',
@@ -910,9 +963,23 @@ def cart_page():
 def checkout_page():
     st.header("Checkout")
     
+    # Add custom CSS for container width and button styling
+    st.markdown("""
+        <style>
+        .main-container {
+            max-width: 600px !important;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+        .stButton > button {
+            margin-top: 20px;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
     if not st.session_state.cart_items:
         st.info("Your cart is empty")
-        if st.button("Browse Marketplace", use_container_width=False):
+        if st.button("Browse Marketplace"):
             st.session_state.active_tab = "Browse"
             st.rerun()
         return
@@ -920,75 +987,32 @@ def checkout_page():
     # Initialize checkout step in session state if not exists
     if 'checkout_step' not in st.session_state:
         st.session_state.checkout_step = 1
-    
+
     # Calculate total
     total = sum(item['price'] for item in st.session_state.cart_items)
     shipping_cost = 0
 
-    # Custom CSS for better input and button sizing
-    st.markdown("""
-        <style>
-        /* Input field width */
-        .stTextInput input {
-            width: 100%;
-            max-width: 400px;
-        }
-        
-        /* Smaller width for email and phone inputs */
-        [data-testid="stTextInput"] input[type="text"][aria-label*="Email"],
-        [data-testid="stTextInput"] input[type="text"][aria-label*="Phone"] {
-            max-width: 300px;
-        }
-        
-        /* Button sizing */
-        .stButton button {
-            width: auto;
-            min-width: 150px;
-            max-width: 300px;
-            padding: 0.5rem 1rem;
-        }
-        
-        /* Radio button spacing */
-        .stRadio > div {
-            margin-bottom: 1rem;
-        }
-        
-        /* Container width */
-        .main-container {
-            max-width: 800px;
-            margin: 0 auto;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
-    # Simple step indicator
-    st.markdown(f"**Step {st.session_state.checkout_step} of 2:** {'Shipping Details' if st.session_state.checkout_step == 1 else 'Payment'}")
-
-    # Order Summary - Always visible but simplified
+    # Order Summary - Always visible
     with st.sidebar:
         st.subheader("Order Summary")
-        
         for item in st.session_state.cart_items:
             st.write(f"{item['title']} - ${item['price']:.2f}")
-        
         st.divider()
-        
-        if 'shipping_method' in st.session_state:
-            if "Express" in st.session_state.shipping_method:
-                shipping_cost = 9.99
-            elif "Next Day" in st.session_state.shipping_method:
-                shipping_cost = 19.99
-
         st.write(f"Subtotal: ${total:.2f}")
         st.write(f"Shipping: ${shipping_cost:.2f}")
         st.write(f"**Total: ${(total + shipping_cost):.2f}**")
 
-    # Step 1: Shipping Information
-    if st.session_state.checkout_step == 1:
-        with st.form("shipping_form"):
+    with st.container():
+        st.markdown('<div class="main-container">', unsafe_allow_html=True)
+        
+        # Step indicator
+        st.write(f"Step {st.session_state.checkout_step} of 2: {'Shipping Information' if st.session_state.checkout_step == 1 else 'Payment Information'}")
+        st.divider()
+
+        if st.session_state.checkout_step == 1:
             # Contact Information
             st.subheader("Contact Information")
-            col1, col2 = st.columns([1, 2])
+            col1, col2 = st.columns([1, 1])
             with col1:
                 email = st.text_input("Email")
             with col2:
@@ -996,7 +1020,7 @@ def checkout_page():
             
             # Shipping Information
             st.subheader("Shipping Address")
-            col1, col2 = st.columns(2)
+            col1, col2 = st.columns([1, 1])
             with col1:
                 first_name = st.text_input("First Name")
             with col2:
@@ -1013,7 +1037,7 @@ def checkout_page():
             with col3:
                 zip_code = st.text_input("ZIP")
             
-            # Shipping Method - Simplified options
+            # Shipping Method
             st.subheader("Shipping Method")
             shipping_method = st.radio(
                 "Select Shipping Method",
@@ -1022,13 +1046,18 @@ def checkout_page():
                  "Next Day ($19.99)"]
             )
             
-            st.session_state.shipping_method = shipping_method
-            
+            if "Express" in shipping_method:
+                shipping_cost = 9.99
+            elif "Next Day" in shipping_method:
+                shipping_cost = 19.99
+
             # Continue button
-            if st.form_submit_button("Continue to Payment"):
+            if st.button("Continue to Payment", type="primary", use_container_width=True):
                 if all([email, first_name, last_name, address, city, state, zip_code, phone]):
+                    # Store shipping info in session state
                     st.session_state.shipping_info = {
                         'email': email,
+                        'phone': phone,
                         'first_name': first_name,
                         'last_name': last_name,
                         'address': address,
@@ -1036,63 +1065,84 @@ def checkout_page():
                         'city': city,
                         'state': state,
                         'zip_code': zip_code,
-                        'phone': phone,
-                        'shipping_method': shipping_method
+                        'shipping_method': shipping_method,
+                        'shipping_cost': shipping_cost
                     }
                     st.session_state.checkout_step = 2
                     st.rerun()
                 else:
                     st.error("Please fill in all required fields")
 
-    # Step 2: Payment
-    elif st.session_state.checkout_step == 2:
-        # Simplified shipping info review
-        st.write("**Shipping to:**", 
-                f"{st.session_state.shipping_info['first_name']} {st.session_state.shipping_info['last_name']}, "
-                f"{st.session_state.shipping_info['address']}, "
-                f"{st.session_state.shipping_info['city']}, {st.session_state.shipping_info['state']}")
-        
-        if st.button("← Edit Shipping Info", use_container_width=False):
-            st.session_state.checkout_step = 1
-            st.rerun()
-        
-        st.divider()
-        
-        # Payment form
-        with st.form("payment_form"):
-            st.subheader("Payment Details")
+        else:  # Step 2: Payment
+            # Show shipping info summary
+            st.subheader("Shipping To")
+            st.write(f"{st.session_state.shipping_info['first_name']} {st.session_state.shipping_info['last_name']}")
+            st.write(st.session_state.shipping_info['address'])
+            if st.session_state.shipping_info['apartment']:
+                st.write(st.session_state.shipping_info['apartment'])
+            st.write(f"{st.session_state.shipping_info['city']}, {st.session_state.shipping_info['state']} {st.session_state.shipping_info['zip_code']}")
+            
+            # Back button
+            if st.button("← Edit Shipping Info"):
+                st.session_state.checkout_step = 1
+                st.rerun()
+
+            st.divider()
+            
+            # Payment Information
+            st.subheader("Payment Information")
             card_number = st.text_input("Card Number")
-            col1, col2 = st.columns(2)
+            col1, col2 = st.columns([1, 1])
             with col1:
                 expiry = st.text_input("Expiry (MM/YY)")
             with col2:
                 cvv = st.text_input("CVV")
-
-            # Simplified billing address
-            same_as_shipping = st.checkbox("Billing address same as shipping", value=True)
             
-            if not same_as_shipping:
-                billing_address = st.text_input("Billing Address")
-                col1, col2 = st.columns(2)
+            # Billing address same as shipping
+            same_address = st.checkbox("Billing address same as shipping", value=True)
+            
+            if not same_address:
+                st.subheader("Billing Address")
+                billing_address = st.text_input("Street Address", key="billing")
+                col1, col2, col3 = st.columns([2, 1, 1])
                 with col1:
-                    billing_city = st.text_input("City")
+                    billing_city = st.text_input("City", key="billing_city")
                 with col2:
-                    billing_state = st.text_input("State")
-                billing_zip = st.text_input("ZIP")
-
+                    billing_state = st.text_input("State", key="billing_state")
+                with col3:
+                    billing_zip = st.text_input("ZIP", key="billing_zip")
+            
             # Place Order button
-            if st.form_submit_button("Place Order"):
+            if st.button("Place Order", type="primary", use_container_width=True):
                 if all([card_number, expiry, cvv]):
-                    st.success("Order placed successfully!")
-                    st.balloons()
-                    st.session_state.cart_items = []
-                    st.session_state.checkout_step = 1
-                    if 'shipping_info' in st.session_state:
-                        del st.session_state.shipping_info
-                    st.session_state.active_tab = "Browse"
-                    st.rerun()
+                    # Process payment and create order
+                    try:
+                        # Create Stripe payment intent
+                        intent = stripe.PaymentIntent.create(
+                            amount=int((total + st.session_state.shipping_info['shipping_cost']) * 100),  # Convert to cents
+                            currency='usd',
+                            metadata={
+                                'shipping_method': st.session_state.shipping_info['shipping_method'],
+                                'customer_email': st.session_state.shipping_info['email']
+                            }
+                        )
+                        
+                        st.success("Order placed successfully! Thank you for your purchase.")
+                        st.balloons()
+                        
+                        # Clear cart and checkout state
+                        st.session_state.cart_items = []
+                        st.session_state.checkout_step = 1
+                        if 'shipping_info' in st.session_state:
+                            del st.session_state.shipping_info
+                        st.session_state.active_tab = "Browse"
+                        st.rerun()
+                    except stripe.error.StripeError as e:
+                        st.error(f"Payment failed: {str(e)}")
                 else:
-                    st.error("Please fill in all payment details")
+                    st.error("Please fill in all required fields")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
 
 def profile_page():
     st.header("My Profile")
@@ -1110,6 +1160,21 @@ def profile_page():
         st.metric("Completed Trades", "12")
     with col3:
         st.metric("Rating", "4.8 ⭐")
+    
+    # Stripe Connect Section
+    st.subheader("Payment Settings")
+    if 'stripe_connected' not in st.session_state:
+        st.session_state.stripe_connected = False
+
+    if not st.session_state.stripe_connected:
+        st.warning("⚠️ Your Stripe account is not connected. Connect your account to receive payments.")
+        stripe_connect_url = "https://connect.stripe.com/oauth/authorize?redirect_uri=https://connect.stripe.com/hosted/oauth&client_id=ca_RzfhAU1ORXZvtbVfsYpLzTl1Eq6BSZzG&state=onbrd_RzgZctrYK3D3rEbxlDUg1yLC6F&response_type=code&scope=read_write&stripe_user[country]=US"
+        st.markdown(f'<a href="{stripe_connect_url}" target="_blank"><button style="background-color: #635BFF; color: white; padding: 12px 24px; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">Connect with Stripe</button></a>', unsafe_allow_html=True)
+    else:
+        st.success("✅ Your Stripe account is connected and ready to receive payments")
+        if st.button("Disconnect Stripe Account"):
+            st.session_state.stripe_connected = False
+            st.rerun()
     
     # Quick Actions
     st.subheader("Quick Actions")
@@ -1131,6 +1196,99 @@ def profile_page():
         st.text_area("Bio", value="I love trading and finding unique items!")
         if st.button("Save Changes"):
             st.success("Profile updated successfully!")
+
+def handle_stripe_webhook(payload, sig_header):
+    """Handle Stripe webhook events"""
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, webhook_secret
+        )
+        
+        # Handle specific events
+        if event.type == 'account.updated':
+            account = event.data.object
+            # Update account status in your database
+            st.session_state.stripe_account_status = account.charges_enabled
+        elif event.type == 'account.application.deauthorized':
+            # Handle disconnection
+            st.session_state.stripe_connected = False
+            
+        return {'success': True}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+def handle_stripe_oauth(request):
+    """Handle Stripe OAuth callback"""
+    if 'error' in request.args:
+        return {'success': False, 'error': request.args.get('error')}
+        
+    code = request.args.get('code')
+    try:
+        # Complete OAuth flow
+        response = stripe.OAuth.token(grant_type='authorization_code', code=code)
+        connected_account_id = response.stripe_user_id
+        
+        # Store the connected account ID
+        if 'user_id' in st.session_state:
+            store_connected_account(st.session_state.user_id, connected_account_id)
+            st.session_state.stripe_connected = True
+            
+        return {'success': True, 'account_id': connected_account_id}
+    except stripe.error.StripeError as e:
+        return {'success': False, 'error': str(e)}
+
+def store_connected_account(user_id, account_id):
+    """Store Stripe connected account ID in session and database"""
+    try:
+        # Update user's profile with Stripe account ID
+        user_ref = db.collection('users').document(user_id)
+        user_ref.update({
+            'stripe_account_id': account_id,
+            'stripe_connected': True,
+            'updated_at': datetime.now()
+        })
+        return True
+    except Exception as e:
+        st.error(f"Failed to store connected account: {str(e)}")
+        return False
+
+def update_account_status(account_id, charges_enabled):
+    """Update Stripe account status in database"""
+    try:
+        # Find user by Stripe account ID and update status
+        users_ref = db.collection('users')
+        query = users_ref.where('stripe_account_id', '==', account_id).limit(1)
+        docs = query.get()
+        
+        for doc in docs:
+            doc.reference.update({
+                'stripe_charges_enabled': charges_enabled,
+                'updated_at': datetime.now()
+            })
+        return True
+    except Exception as e:
+        st.error(f"Failed to update account status: {str(e)}")
+        return False
+
+def handle_account_disconnection(account_id):
+    """Handle Stripe account disconnection"""
+    try:
+        # Find user by Stripe account ID and remove Stripe data
+        users_ref = db.collection('users')
+        query = users_ref.where('stripe_account_id', '==', account_id).limit(1)
+        docs = query.get()
+        
+        for doc in docs:
+            doc.reference.update({
+                'stripe_account_id': None,
+                'stripe_connected': False,
+                'stripe_charges_enabled': False,
+                'updated_at': datetime.now()
+            })
+        return True
+    except Exception as e:
+        st.error(f"Failed to handle disconnection: {str(e)}")
+        return False
 
 # Main App Logic
 def main():
