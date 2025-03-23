@@ -1,6 +1,7 @@
 # item_service.py - Item listing and management
 from firebase_config import db
 import datetime
+import firebase_admin
 from firebase_admin import firestore
 
 def list_new_item(user_id, item_data):
