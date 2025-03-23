@@ -217,7 +217,7 @@ def create_item_card(item, is_detail=False, show_trade_btn=True):
     
     with col1:
         image_url = item.get('image_url', "https://via.placeholder.com/150")
-        st.image(image_url, use_column_width=True)
+        st.image(image_url, use_container_width=True)
     
     with col2:
         st.markdown(f"<h3 style='color: #1E88E5; margin-bottom: 0.5rem;'>{item['title']}</h3>", unsafe_allow_html=True)
