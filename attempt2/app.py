@@ -1,6 +1,6 @@
-#TO RUN:
-#pip3 install streamlit pandas scikit-learn numpy
-#streamlit run app.py
+# TO RUN:
+# pip3 install streamlit pandas scikit-learn numpy
+# streamlit run app.py
 
 import streamlit as st
 import pandas as pd
@@ -10,6 +10,13 @@ import random
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
+
+# Initialize the app
+st.set_page_config(
+    page_title="Next Gen Marketplace",
+    page_icon="🔄",
+    layout="wide"
+)
 
 # Replace Firebase with mock object during testing
 class MockDB:
@@ -267,8 +274,27 @@ def top_nav():
                     st.rerun()
 
 def header():
+
     st.title("🔄 NextGen Marketplace")
     st.write("Buy • Sell • Barter • Build Community")
+
+    col1, col2, col3 = st.columns([3, 3, 2])
+    
+    with col1:
+        st.title("🔄 Next Gen Marketplace")
+        st.write("Buy • Sell • Barter • Build Community")
+    
+    with col3:
+        if st.session_state.logged_in:
+            st.write(f"Welcome, {st.session_state.username}!")
+            if st.button("Logout"):
+                st.session_state.logged_in = False
+                st.session_state.username = ""
+                st.experimental_rerun()
+        else:
+            if st.button("Login / Register"):
+                st.session_state.active_tab = "Login"
+                st.experimental_rerun()
 
 def sidebar():
     with st.sidebar:
@@ -898,3 +924,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+    
