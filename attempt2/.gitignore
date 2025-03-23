@@ -35,4 +35,6 @@ ENV/
 *.swo
 
 # Firebase
+firebase/*.json
 firebase/serviceAccountKey.json
+firebase/nextgenmarketplace-3c041-firebase-adminsdk-fbsvc-a51be76f07.json
