@@ -25,7 +25,7 @@ import numpy as np
 
 # Initialize the app
 st.set_page_config(
-    page_title="CommuniTrade - Buy & Barter Marketplace",
+    page_title="Next Gen Marketplace",
     page_icon="🔄",
     layout="wide"
 )
@@ -222,7 +222,7 @@ def header():
     col1, col2, col3 = st.columns([3, 3, 2])
     
     with col1:
-        st.title("🔄 CommuniTrade")
+        st.title("🔄 Next Gen Marketplace")
         st.write("Buy • Sell • Barter • Build Community")
     
     with col3:
