@@ -11,12 +11,80 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 
-# Initialize the app
+# Initialize the app with custom styling
 st.set_page_config(
-    page_title="Next Gen Marketplace",
+    page_title="NextGenMarket - Buy & Barter Marketplace",
     page_icon="🔄",
     layout="wide"
 )
+
+# Custom CSS styling
+st.markdown("""
+<style>
+    /* Main theme colors */
+    :root {
+        --primary-color: #1E88E5;
+        --secondary-color: #FFC107;
+        --background-color: #F8F9FA;
+        --text-color: #212529;
+    }
+
+    /* Header styling */
+    .stTitle {
+        color: var(--primary-color) !important;
+        font-weight: 700 !important;
+    }
+
+    /* Button styling */
+    .stButton > button {
+        background-color: var(--primary-color);
+        color: white;
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        border: none;
+        transition: all 0.3s ease;
+    }
+    .stButton > button:hover {
+        background-color: #1565C0;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    /* Card styling */
+    div[data-testid="stHorizontalBlock"] > div {
+        background-color: white;
+        border-radius: 10px;
+        padding: 1rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        transition: transform 0.3s ease;
+    }
+    div[data-testid="stHorizontalBlock"] > div:hover {
+        transform: translateY(-5px);
+    }
+
+    /* Sidebar styling */
+    .css-1d391kg {
+        background-color: var(--background-color);
+    }
+
+    /* Input fields styling */
+    .stTextInput > div > div > input {
+        border-radius: 6px;
+    }
+
+    /* Tabs styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 1rem;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 4px 4px 0 0;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: var(--primary-color) !important;
+        color: white !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # Replace Firebase with mock object during testing
 class MockDB:
@@ -39,13 +107,6 @@ class MockDB:
         return MockCollection()
 
 db = MockDB()
-
-# Initialize the app
-st.set_page_config(
-    page_title="NextGenMarket - Buy & Barter Marketplace",
-    page_icon="🔄",
-    layout="wide"
-)
 
 # Session state initialization
 if 'user_id' not in st.session_state:
@@ -155,12 +216,14 @@ def create_item_card(item, is_detail=False, show_trade_btn=True):
     col1, col2 = st.columns([1, 3])
     
     with col1:
-        # Use actual image if available, otherwise use placeholder
         image_url = item.get('image_url', "https://via.placeholder.com/150")
-        st.image(image_url, use_container_width=True)
+        st.image(image_url, use_column_width=True)
     
     with col2:
-        st.subheader(item['title'])
+        st.markdown(f"<h3 style='color: #1E88E5; margin-bottom: 0.5rem;'>{item['title']}</h3>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color: #666;'>{item['description']}</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color: #FFC107; font-weight: 500;'>Trade Value: ${item.get('trade_value', item['price'])}</p>", unsafe_allow_html=True)
+        st.markdown(f"<p style='color: #4CAF50;'>Category: {item['category']}</p>", unsafe_allow_html=True)
         
         # Display price and barter status
         price_col, barter_col, action_col = st.columns([1, 1, 1])
@@ -177,7 +240,6 @@ def create_item_card(item, is_detail=False, show_trade_btn=True):
                     st.rerun()
         
         st.write(f"**Condition:** {item['condition']}")
-        st.write(f"**Category:** {item['category']}")
         
         if is_detail:
             st.write("**Description:**")
@@ -234,8 +296,8 @@ def top_nav():
             unsafe_allow_html=True
         )
         
-        # Create three columns for search, logo, and profile
-        col1, col2, col3 = st.columns([3, 1, 1])
+        # Create columns for search, cart, and profile - adjusted ratios
+        col1, col2, col3 = st.columns([2.5, 1, 1.5])
         
         with col1:
             # Global search bar
@@ -255,9 +317,9 @@ def top_nav():
                 st.rerun()
         
         with col3:
-            # Profile section
+            # Profile section with adjusted column ratios
             if st.session_state.logged_in:
-                col3_1, col3_2 = st.columns([3, 2])
+                col3_1, col3_2 = st.columns([1.2, 0.8])  # Adjusted ratio for profile and logout
                 with col3_1:
                     if st.button("👤 " + st.session_state.username[:10] + "...", use_container_width=True):
                         st.session_state.active_tab = "Profile"
@@ -274,27 +336,20 @@ def top_nav():
                     st.rerun()
 
 def header():
-
-    st.title("🔄 NextGen Marketplace")
-    st.write("Buy • Sell • Barter • Build Community")
-
     col1, col2, col3 = st.columns([3, 3, 2])
     
     with col1:
-        st.title("🔄 Next Gen Marketplace")
-        st.write("Buy • Sell • Barter • Build Community")
+        st.markdown('<div style="display: flex; align-items: center; gap: 1rem;">', unsafe_allow_html=True)
+        st.image("assets/nextgen_icon.png", width=50)
+        st.markdown("""
+            <h1 style='color: #1E88E5; margin: 0;'>Next Gen Marketplace</h1>
+            <p style='color: #666; font-size: 1.1em; margin-top: 0.5rem;'>Buy • Sell • Barter • Build Community</p>
+            </div>
+        """, unsafe_allow_html=True)
     
     with col3:
         if st.session_state.logged_in:
-            st.write(f"Welcome, {st.session_state.username}!")
-            if st.button("Logout"):
-                st.session_state.logged_in = False
-                st.session_state.username = ""
-                st.experimental_rerun()
-        else:
-            if st.button("Login / Register"):
-                st.session_state.active_tab = "Login"
-                st.experimental_rerun()
+            st.markdown(f"<p style='color: #1E88E5; font-weight: 500;'>Welcome, {st.session_state.username}! 👋</p>", unsafe_allow_html=True)
 
 def sidebar():
     with st.sidebar:
@@ -608,23 +663,37 @@ def create_listing_page():
     
     description = st.text_area("Description", placeholder="Provide details about your item", height=150)
     
-    col1, col2 = st.columns(2)
-    with col1:
-        price = st.number_input("Price ($)", min_value=1, step=1)
-    with col2:
-        barter_available = st.checkbox("Available for trade/barter", value=True)
+    # Listing Type Selection with improved UI
+    st.markdown("### Listing Type")
+    listing_type_col1, listing_type_col2 = st.columns(2)
+    
+    with listing_type_col1:
+        for_sale = st.checkbox("Available for Sale", value=True)
+        if for_sale:
+            price = st.number_input("Sale Price ($)", min_value=1, step=1)
+    
+    with listing_type_col2:
+        barter_available = st.checkbox("Available for Trade/Barter", value=True)
+        if barter_available:
+            st.info("Trade value will be calculated based on item details")
+            if st.button("Calculate Trade Value"):
+                trade_value = get_trade_value(description, category, condition)
+                st.session_state.estimated_value = trade_value
+                st.success(f"Estimated Trade Value: ${trade_value}")
+    
+    if not for_sale and not barter_available:
+        st.error("Please select at least one option: For Sale or For Trade")
     
     uploaded_files = st.file_uploader("Upload Images (Max 5)", accept_multiple_files=True, type=["jpg", "jpeg", "png"])
     
-    if st.button("Preview Trade Value"):
-        trade_value = get_trade_value(description, category, condition)
-        st.session_state.estimated_value = trade_value
-        st.info(f"Estimated Trade Value: ${trade_value}")
-        st.write("This is what our AI thinks your item is worth for bartering purposes.")
-    
-    if st.button("Create Listing", use_container_width=True):
-        if not title or not description or not price:
+    # Create listing button
+    if st.button("Create Listing", use_container_width=True, type="primary"):
+        if not title or not description:
             st.error("Please fill in all required fields")
+        elif not for_sale and not barter_available:
+            st.error("Please select at least one listing type (Sale or Trade)")
+        elif for_sale and not price:
+            st.error("Please set a sale price")
         else:
             st.success("🎉 Your listing has been created successfully!")
             st.balloons()
@@ -791,22 +860,20 @@ def propose_trade_page():
     col1, col2 = st.columns(2)
     
     # Submit proposal
-    with col1:
-        if st.button("Send Trade Proposal", use_container_width=True):
-            st.success("🤝 Your trade proposal has been sent! You'll be notified when the other person responds.")
-            st.balloons()
-            st.session_state.active_tab = "Trade Proposals"
-            st.rerun()
+    if st.button("Send Trade Proposal", use_container_width=True):
+        st.success("🤝 Your trade proposal has been sent! You'll be notified when the other person responds.")
+        st.balloons()
+        st.session_state.active_tab = "Trade Proposals"
+        st.rerun()
     
     # Cancel
-    with col2:
-        if st.button("Cancel", use_container_width=True):
-            st.session_state.active_tab = "Browse"
-            if 'trade_item' in st.session_state:
-                del st.session_state.trade_item
-            if 'my_item' in st.session_state:
-                del st.session_state.my_item
-            st.rerun()
+    if st.button("Cancel", use_container_width=True):
+        st.session_state.active_tab = "Browse"
+        if 'trade_item' in st.session_state:
+            del st.session_state.trade_item
+        if 'my_item' in st.session_state:
+            del st.session_state.my_item
+        st.rerun()
 
 def cart_page():
     st.header("Shopping Cart")
