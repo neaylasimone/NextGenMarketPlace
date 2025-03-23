@@ -6,21 +6,19 @@ import pyrebase
 import datetime
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
-from .firebase_config import firebase_config
+from .firebase_config import firebase_config, db, auth as firebase_auth
 
 # Initialize Firebase Admin SDK
 try:
     cred_path = os.path.join(os.path.dirname(__file__), "nextgenmarketplace-3c041-firebase-adminsdk-fbsvc-a51be76f07.json")
     if os.path.exists(cred_path):
         cred = credentials.Certificate(cred_path)
-        firebase_admin.initialize_app(cred)
-        db = firestore.client()
+        if not firebase_admin._apps:
+            firebase_admin.initialize_app(cred)
     else:
         st.error("Firebase Admin SDK credentials file not found. Please add the credentials file to the firebase directory.")
-        db = None
 except Exception as e:
     st.error(f"Error initializing Firebase Admin SDK: {str(e)}")
-    db = None
 
 # Initialize Firebase for client-side auth
 try:
@@ -47,19 +45,47 @@ if 'username' not in st.session_state:
 # Login/Register functions
 def login(email, password):
     try:
+        # Check if auth_client is initialized
+        if auth_client is None:
+            st.error("Firebase client not initialized")
+            return False
+            
+        # Try to sign in
         user = auth_client.sign_in_with_email_and_password(email, password)
+        
+        # Get user details
         user_result = auth_service.get_user_by_email(email)
+        
         if user_result['success']:
+            # Set session state variables
             st.session_state.user_id = user_result['user'].uid
             st.session_state.user_email = email
             st.session_state.username = user_result['user'].display_name
             return True
+        else:
+            st.error("Failed to retrieve user information")
+            return False
+            
     except Exception as e:
-        st.error(f"Login failed: {str(e)}")
-    return False
+        error_message = str(e)
+        # Log the full error for debugging
+        print(f"Login error: {error_message}")
+        
+        # Show a more user-friendly message
+        if "INVALID_PASSWORD" in error_message:
+            st.error("Invalid password. Please try again.")
+        elif "EMAIL_NOT_FOUND" in error_message:
+            st.error("Email not found. Please check your email or register.")
+        else:
+            st.error(f"Login failed: {error_message}")
+        return False
 
 def register(email, password, username):
     try:
+        if auth_client is None:
+            st.error("Firebase client not initialized")
+            return False
+            
         result = auth_service.register_user(email, password, username)
         if result['success']:
             st.session_state.user_id = result['user'].uid
@@ -82,33 +108,35 @@ def logout():
 def main():
     st.title("Trading App")
     
+    if 'user_id' not in st.session_state:
+        st.session_state.user_id = None
+    if 'username' not in st.session_state:
+        st.session_state.username = None
+    if 'user_email' not in st.session_state:
+        st.session_state.user_email = None
+        
     # Sidebar
     with st.sidebar:
         st.title("Navigation")
-        
         if st.session_state.user_id:
             st.write(f"Logged in as: {st.session_state.username}")
-            
             page = st.radio(
                 "Go to",
                 ["My Items", "Add New Item", "My Wishlist", "Search Items", "Potential Matches"]
             )
-            
             if st.button("Logout"):
                 logout()
         else:
             auth_option = st.radio("Select option", ["Login", "Register"])
-            
             if auth_option == "Login":
                 with st.form("login_form"):
                     email = st.text_input("Email")
                     password = st.text_input("Password", type="password")
                     submit = st.form_submit_button("Login")
-                    
-                    if submit:
-                        if login(email, password):
-                            st.success("Login successful!")
-                            st.experimental_rerun()
+                if submit:
+                    if login(email, password):
+                        st.success("Login successful!")
+                        st.experimental_rerun()
             else:
                 with st.form("register_form"):
                     email = st.text_input("Email")
@@ -116,15 +144,13 @@ def main():
                     password = st.text_input("Password", type="password")
                     confirm_password = st.text_input("Confirm Password", type="password")
                     submit = st.form_submit_button("Register")
-                    
-                    if submit:
-                        if password != confirm_password:
-                            st.error("Passwords do not match")
-                        else:
-                            if register(email, password, username):
-                                st.success("Registration successful!")
-                                st.experimental_rerun()
-            
+                if submit:
+                    if password != confirm_password:
+                        st.error("Passwords do not match")
+                    else:
+                        if register(email, password, username):
+                            st.success("Registration successful!")
+                            st.experimental_rerun()
             # Show sample page for not logged in users
             page = "Welcome"
     

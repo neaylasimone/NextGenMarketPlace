@@ -5,44 +5,41 @@ import firebase_admin
 from firebase_admin import auth
 import datetime
 import re
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 
 def validate_email(email: str) -> bool:
     """Validate email format"""
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return bool(re.match(pattern, email))
+    return '@' in email and '.' in email
 
 def validate_password(password: str) -> bool:
-    """
-    Validate password strength
-    Requirements:
-    - At least 8 characters
-    - At least one uppercase letter
-    - At least one lowercase letter
-    - At least one number
-    - At least one special character
-    """
-    if len(password) < 8:
-        return False
-    if not re.search(r'[A-Z]', password):
-        return False
-    if not re.search(r'[a-z]', password):
-        return False
-    if not re.search(r'\d', password):
-        return False
-    if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
-        return False
-    return True
+    """Validate password strength"""
+    return len(password) >= 6
 
 def validate_username(username: str) -> bool:
-    """
-    Validate username
-    Requirements:
-    - 3-20 characters
-    - Alphanumeric and underscores only
-    """
-    pattern = r'^[a-zA-Z0-9_]{3,20}$'
-    return bool(re.match(pattern, username))
+    """Validate username format"""
+    return len(username) >= 3 and len(username) <= 20
+
+def get_next_user_id() -> str:
+    """Get the next available user ID"""
+    try:
+        # Get all users and find the highest ID
+        users_ref = db.collection('users')
+        users = users_ref.get()
+        max_id = 0
+        
+        for user in users:
+            user_data = user.to_dict()
+            if 'user_id' in user_data:
+                try:
+                    user_num = int(user_data['user_id'].replace('user', ''))
+                    max_id = max(max_id, user_num)
+                except ValueError:
+                    continue
+        
+        return f"user{max_id + 1}"
+    except Exception as e:
+        print(f"Error getting next user ID: {str(e)}")
+        return "user1"  # Default to user1 if there's an error
 
 def register_user(email: str, password: str, username: str) -> Dict:
     """
@@ -68,12 +65,21 @@ def register_user(email: str, password: str, username: str) -> Dict:
         if not validate_username(username):
             return {'success': False, 'error': 'Invalid username format'}
         
-        # Check if email already exists
+        # Check if email already exists in Auth
         try:
             auth.get_user_by_email(email)
             return {'success': False, 'error': 'Email already registered'}
         except auth.UserNotFoundError:
             pass
+            
+        # Check if username already exists in Firestore
+        users_ref = db.collection('users')
+        existing_user = users_ref.where('username', '==', username).limit(1).get()
+        if existing_user:
+            return {'success': False, 'error': 'Username already taken'}
+        
+        # Get next user ID
+        user_id = get_next_user_id()
         
         # Create user in Firebase Auth
         user = auth.create_user(
@@ -84,15 +90,24 @@ def register_user(email: str, password: str, username: str) -> Dict:
         
         # Create user profile in Firestore
         user_data = {
+            'user_id': user_id,
             'email': email,
             'username': username,
             'created_at': datetime.datetime.now(),
-            'wishlist': []
+            'last_login': datetime.datetime.now(),
+            'listed_items': [],
+            'wishlist': [],
+            'is_active': True
         }
         
-        db.collection('users').document(user.uid).set(user_data)
+        db.collection('users').document(user_id).set(user_data)
         
-        return {'success': True, 'user': user}
+        return {
+            'success': True,
+            'user_id': user_id,
+            'email': email,
+            'username': username
+        }
     except Exception as e:
         return {'success': False, 'error': str(e)}
 
@@ -261,29 +276,63 @@ def update_password(user_id: str, new_password: str) -> Dict:
     except Exception as e:
         return {'success': False, 'error': str(e)}
 
-def login_user(email, password):
-    """Login a user"""
+def login_user(email: str, password: str) -> Dict:
+    """
+    Login a user with Firebase Authentication
+    
+    Args:
+        email (str): User's email
+        password (str): User's password
+        
+    Returns:
+        dict: Result with success status and user data or error
+    """
     try:
         if db is None:
             return {'success': False, 'error': 'Database not initialized'}
             
+        # Validate inputs
+        if not validate_email(email):
+            return {'success': False, 'error': 'Invalid email format'}
+        if not validate_password(password):
+            return {'success': False, 'error': 'Invalid password'}
+        
         # Get user from Firebase Auth
         user = auth.get_user_by_email(email)
         
         # Get user profile from Firestore
-        user_doc = db.collection('users').document(user.uid).get()
-        if not user_doc.exists:
+        users_ref = db.collection('users')
+        user_doc = users_ref.where('email', '==', email).limit(1).get()
+        
+        if not user_doc:
             return {'success': False, 'error': 'User profile not found'}
             
-        user_data = user_doc.to_dict()
+        user_data = user_doc[0].to_dict()
+        
+        # Update last login
+        user_data['last_login'] = datetime.datetime.now()
+        users_ref.document(user_data['user_id']).update({'last_login': user_data['last_login']})
         
         return {
             'success': True,
-            'user_id': user.uid,
+            'user_id': user_data['user_id'],
+            'email': user_data['email'],
             'username': user_data.get('username', '')
         }
+    except auth.UserNotFoundError:
+        return {'success': False, 'error': 'User not found'}
+    except auth.InvalidPasswordError:
+        return {'success': False, 'error': 'Invalid password'}
     except Exception as e:
         return {'success': False, 'error': str(e)}
+
+def logout():
+    """Logout the current user"""
+    st.session_state.user_id = None
+    st.session_state.user_email = None
+    st.session_state.username = None
+    st.session_state.logged_in = False
+    st.experimental_rerun()
 
 def get_user_profile(user_id):
     """Get user profile data"""

@@ -20,7 +20,11 @@ from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 from firebase.firebase_app import initialize_firebase
 from firebase.auth_service import register_user, login_user, get_user_profile
-from firebase.item_service import list_new_item, get_user_listed_items, update_listed_item, delete_listed_item
+from firebase.item_service import (
+    add_item, get_item, update_item, delete_item,
+    search_items, get_user_items, add_to_wishlist,
+    remove_from_wishlist, get_wishlist_items, find_potential_matches
+)
 from firebase.search_service import search_items, find_potential_matches, find_trade_matches, rate_trade_value
 from firebase.user_service import add_to_wishlist, remove_from_wishlist, update_user_profile
 import json
@@ -297,46 +301,67 @@ def sidebar():
                 st.rerun()
 
 def login_page():
-    st.title("Login to NextGenMarket")
+    """Display login page"""
+    st.title("Welcome to NextGen Marketplace")
     
-    with st.form("login_form"):
-        email = st.text_input("Email")
-        password = st.text_input("Password", type="password")
-        submit = st.form_submit_button("Login")
+    tab1, tab2 = st.tabs(["Login", "Register"])
+    
+    with tab1:
+        st.subheader("Login")
+        email = st.text_input("Email", key="login_email")
+        password = st.text_input("Password", type="password", key="login_password")
         
-        if submit:
-            if not email or not password:
-                st.error("Please fill in all fields")
-            else:
+        if st.button("Login"):
+            if email and password:
                 result = login_user(email, password)
                 if result['success']:
+                    # Initialize session state
                     st.session_state.user_id = result['user_id']
+                    st.session_state.user_email = result['email']
+                    st.session_state.username = result['username']
                     st.session_state.logged_in = True
-                    st.session_state.username = result.get('username', '')
+                    st.session_state.active_tab = "Browse"
+                    
+                    # Fetch user profile data
+                    user_profile = get_user_profile(result['user_id'])
+                    if user_profile:
+                        st.session_state.user_profile = user_profile
+                    
                     st.success("Login successful!")
                     st.rerun()
                 else:
                     st.error(result.get('error', 'Login failed'))
-    
-    st.markdown("---")
-    st.subheader("Don't have an account?")
-    
-    with st.form("register_form"):
-        reg_email = st.text_input("Email")
-        reg_password = st.text_input("Password", type="password")
-        reg_username = st.text_input("Username")
-        reg_submit = st.form_submit_button("Register")
-        
-        if reg_submit:
-            if not reg_email or not reg_password or not reg_username:
-                st.error("Please fill in all fields")
             else:
-                result = register_user(reg_email, reg_password, reg_username)
+                st.error("Please fill in all fields")
+    
+    with tab2:
+        st.subheader("Register")
+        email = st.text_input("Email", key="register_email")
+        password = st.text_input("Password", type="password", key="register_password")
+        username = st.text_input("Username", key="register_username")
+        
+        if st.button("Register"):
+            if email and password and username:
+                result = register_user(email, password, username)
                 if result['success']:
-                    st.success("Registration successful! Please login.")
+                    # Initialize session state
+                    st.session_state.user_id = result['user_id']
+                    st.session_state.user_email = result['email']
+                    st.session_state.username = result['username']
+                    st.session_state.logged_in = True
+                    st.session_state.active_tab = "Browse"
+                    
+                    # Fetch user profile data
+                    user_profile = get_user_profile(result['user_id'])
+                    if user_profile:
+                        st.session_state.user_profile = user_profile
+                    
+                    st.success("Registration successful!")
                     st.rerun()
                 else:
                     st.error(result.get('error', 'Registration failed'))
+            else:
+                st.error("Please fill in all fields")
 
 def browse_marketplace():
     st.title("Browse Marketplace")
@@ -555,7 +580,7 @@ def create_listing_page():
                     item_data['images'] = [f.name for f in uploaded_files]
                 
                 # Create the listing
-                result = list_new_item(st.session_state.user_id, item_data)
+                result = add_item(st.session_state.user_id, item_data)
                 if result['success']:
                     st.success("Listing created successfully!")
                     st.session_state.active_tab = "My Listings"
@@ -567,7 +592,7 @@ def my_listings_page():
     st.title("My Listings")
     
     # Get user's listings from Firebase
-    result = get_user_listed_items(st.session_state.user_id)
+    result = get_user_items(st.session_state.user_id)
     if not result['success']:
         st.error(f"Error fetching listings: {result.get('error', 'Unknown error')}")
         return
@@ -640,7 +665,7 @@ def my_listings_page():
                     
                     if st.button("Delete", key=f"delete_{listing['id']}"):
                         if st.warning("Are you sure you want to delete this listing?"):
-                            result = delete_listed_item(st.session_state.user_id, listing['id'])
+                            result = delete_item(listing['id'], st.session_state.user_id)
                             if result['success']:
                                 st.success("Listing deleted successfully!")
                                 st.rerun()
@@ -653,7 +678,7 @@ def my_listings_page():
                                key=f"toggle_{listing['id']}"):
                         updated_listing = listing.copy()
                         updated_listing['active'] = not listing.get('active', True)
-                        result = update_listed_item(st.session_state.user_id, listing['id'], updated_listing)
+                        result = update_item(listing['id'], st.session_state.user_id, updated_listing)
                         if result['success']:
                             st.success(f"Listing marked as {'Inactive' if status == 'Active' else 'Active'}")
                             st.rerun()
@@ -691,7 +716,7 @@ def propose_trade_page():
     st.subheader("Select what you'll offer:")
     
     # Get user's items from Firebase
-    result = get_user_listed_items(st.session_state.user_id)
+    result = get_user_items(st.session_state.user_id)
     if not result['success']:
         st.error(f"Error fetching your items: {result.get('error', 'Unknown error')}")
         return
@@ -1016,7 +1041,7 @@ def edit_listing_page():
                     updated_listing['images'] = [f.name for f in uploaded_files]
                 
                 # Update the listing
-                result = update_listed_item(st.session_state.user_id, listing['id'], updated_listing)
+                result = update_item(listing['id'], st.session_state.user_id, updated_listing)
                 if result['success']:
                     st.success("Listing updated successfully!")
                     del st.session_state.editing_listing
