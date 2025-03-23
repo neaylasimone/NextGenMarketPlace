@@ -245,7 +245,7 @@ def create_item_card(item, is_detail=False, show_trade_btn=True):
                 st.write("🔄 Available for trade")
         with action_col:
             if not is_detail and item not in st.session_state.cart_items:
-                if st.button("🛒 Add to Cart", key=f"cart_{item['id']}"):
+                if st.button("🛒 Add to Cart", key=f"cart_{item['id']}", use_container_width=True):
                     st.session_state.cart_items.append(item)
                     st.success("Added to cart!")
                     st.rerun()
@@ -264,10 +264,10 @@ def create_item_card(item, is_detail=False, show_trade_btn=True):
             if item.get('user_id') != st.session_state.user_id:
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.button("Contact Seller", key=f"contact_{item['id']}")
+                    st.button("Contact Seller", key=f"contact_{item['id']}", use_container_width=True)
                 with col2:
                     if item.get('barter_available', False) and show_trade_btn:
-                        if st.button("Propose Trade", key=f"trade_{item['id']}"):
+                        if st.button("Propose Trade", key=f"trade_{item['id']}", use_container_width=True):
                             st.session_state.active_tab = "Propose Trade"
                             st.session_state.trade_item = item
                             st.rerun()
@@ -279,7 +279,7 @@ def create_item_card(item, is_detail=False, show_trade_btn=True):
             st.write(short_desc)
             
             # View details button
-            if st.button("View Details", key=f"view_{item['id']}"):
+            if st.button("View Details", key=f"view_{item['id']}", use_container_width=True):
                 st.session_state.active_tab = "Item Detail"
                 st.session_state.detail_item = item
                 st.rerun()
@@ -389,20 +389,52 @@ def top_nav():
                     st.rerun()
 
 def header():
-    col1, col2, col3 = st.columns([3, 3, 2])
+    st.markdown("""
+        <style>
+        .header-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+        .header-text {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .header-text h1 {
+            color: #1E88E5;
+            margin: 0;
+            font-size: 2.5em;
+        }
+        .header-text p {
+            color: #666;
+            font-size: 1.1em;
+            margin-top: 0.5rem;
+        }
+        .welcome-text {
+            text-align: center;
+            margin-top: 1rem;
+        }
+        </style>
+    """, unsafe_allow_html=True)
     
-    with col1:
-        st.markdown('<div style="display: flex; align-items: center; gap: 1rem;">', unsafe_allow_html=True)
-        st.image("assets/nextgen_icon.png", width=50)
-        st.markdown("""
-            <h1 style='color: #1E88E5; margin: 0;'>Next Gen Marketplace</h1>
-            <p style='color: #666; font-size: 1.1em; margin-top: 0.5rem;'>Buy • Sell • Barter • Build Community</p>
-            </div>
-        """, unsafe_allow_html=True)
+    # Center the logo and text
+    st.markdown('<div class="header-container">', unsafe_allow_html=True)
+    st.image("assets/nextgen_icon.png", width=50)
+    st.markdown("""
+        <div class="header-text">
+            <h1>Next Gen Marketplace</h1>
+            <p>Buy • Sell • Barter • Build Community</p>
+        </div>
+    """, unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
     
-    with col3:
-        if st.session_state.logged_in:
-            st.markdown(f"<p style='color: #1E88E5; font-weight: 500;'>Welcome, {st.session_state.username}! 👋</p>", unsafe_allow_html=True)
+    # Welcome message
+    if st.session_state.logged_in:
+        st.markdown(f'<div class="welcome-text"><p style="color: #1E88E5; font-weight: 500;">Welcome, {st.session_state.username}! 👋</p></div>', unsafe_allow_html=True)
 
 def sidebar():
     with st.sidebar:
