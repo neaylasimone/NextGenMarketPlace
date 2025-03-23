@@ -2,6 +2,7 @@
 from firebase_config import db
 import firebase_admin
 from firebase_admin import firestore
+import datetime
 
 def get_user_profile(user_id):
     """
@@ -53,8 +54,33 @@ def add_to_wishlist(user_id, wishlist_item):
         wishlist_item (dict): Item to add to wishlist
             {
               'item_name': 'Item Name',
+              'category': 'Electronics/Clothing/etc',
               'description': 'What I'm looking for',
-              'willing_to_trade': ['Item1', 'Item2']
+              'preferred_condition': 'New/Used/etc',
+              'brand': 'Brand name if applicable',
+              'model': 'Model number if applicable',
+              'year': 'Year of manufacture if applicable',
+              'size': 'Size if applicable',
+              'color': 'Color if applicable',
+              'tags': ['tag1', 'tag2'],
+              'willing_to_trade': [
+                {
+                  'name': 'Item Name',
+                  'category': 'Electronics/Clothing/etc',
+                  'condition': 'New/Used/etc',
+                  'description': 'Description of what you're offering',
+                  'brand': 'Brand name if applicable',
+                  'model': 'Model number if applicable',
+                  'year': 'Year of manufacture if applicable',
+                  'size': 'Size if applicable',
+                  'color': 'Color if applicable',
+                  'tags': ['tag1', 'tag2']
+                }
+              ],
+              'shipping_preferences': {
+                'willing_to_pay_shipping': True/False,
+                'max_shipping_cost': 20.00
+              }
             }
             
     Returns:
@@ -67,11 +93,15 @@ def add_to_wishlist(user_id, wishlist_item):
         user_data = user_ref.get().to_dict()
         wishlist = user_data.get('wishlist', [])
         
-        # Add new item
+        # Add new item with timestamp
+        wishlist_item['added_at'] = datetime.datetime.now()
         wishlist.append(wishlist_item)
         
         # Update wishlist
-        user_ref.update({'wishlist': wishlist})
+        user_ref.update({
+            'wishlist': wishlist,
+            'last_updated': datetime.datetime.now()
+        })
         
         return {'success': True}
     except Exception as e:

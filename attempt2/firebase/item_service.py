@@ -16,10 +16,29 @@ def list_new_item(user_id, item_data):
               'description': 'Item description',
               'condition': 'New/Used/etc',
               'images': ['url1', 'url2'],
+              'category': 'Electronics/Clothing/etc',
+              'brand': 'Brand name if applicable',
+              'model': 'Model number if applicable',
+              'year': 'Year of manufacture if applicable',
+              'size': 'Size if applicable',
+              'color': 'Color if applicable',
+              'tags': ['tag1', 'tag2'],
               'for_sale': True/False,
               'price': 100,  # if for sale
               'for_trade': True/False,
-              'looking_for': ['Item1', 'Item2']  # if for trade
+              'looking_for': [
+                {
+                  'category': 'Electronics/Clothing/etc',
+                  'item_type': 'Specific type of item',
+                  'condition': 'Preferred condition',
+                  'description': 'Detailed description of what you want',
+                  'tags': ['tag1', 'tag2']
+                }
+              ],
+              'shipping': {
+                'willing_to_ship': True/False,
+                'shipping_cost': 10.00  # if willing to ship
+              }
             }
             
     Returns:

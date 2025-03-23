@@ -18,13 +18,13 @@ st.set_page_config(
 
 # Firebase config for client-side auth (different from admin SDK)
 firebase_config = {
-    "apiKey": "YOUR_API_KEY",
-    "authDomain": "YOUR_PROJECT_ID.firebaseapp.com",
-    "projectId": "YOUR_PROJECT_ID",
-    "storageBucket": "YOUR_PROJECT_ID.appspot.com",
-    "messagingSenderId": "YOUR_MESSAGING_SENDER_ID",
-    "appId": "YOUR_APP_ID",
-    "databaseURL": ""  # Required by pyrebase
+    "apiKey": "AIzaSyCOaOWgmWZACwroiwMk8PgZ3FkouTFf7zs",
+    "authDomain": "nextgenmarketplace-3c041.firebaseapp.com",
+    "projectId": "nextgenmarketplace-3c041",
+    "storageBucket": "nextgenmarketplace-3c041.firebasestorage.app",
+    "messagingSenderId": "647637034752",
+    "appId": "1:647637034752:web:d188f7820264ad6a10b5e5",
+    "measurementId": "G-XKD3BYRLJM"
 }
 
 # Initialize Firebase for client side (authentication)
