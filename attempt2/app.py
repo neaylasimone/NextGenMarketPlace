@@ -1,10 +1,8 @@
 #TO RUN:
-#pip3 install streamlit firebase-admin pandas scikit-learn numpy
+#pip3 install streamlit pandas scikit-learn numpy
 #streamlit run app.py
 
 import streamlit as st
-# import firebase_admin
-# from firebase_admin import credentials, firestore
 import pandas as pd
 from datetime import datetime
 import uuid
@@ -12,38 +10,6 @@ import random
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
-# import auth_service
-# import user_service
-# import item_service
-# import search_service
-
-# firebase_config = {
-#   apiKey: "AIzaSyCOaOWgmWZACwroiwMk8PgZ3FkouTFf7zs",
-#   authDomain: "nextgenmarketplace-3c041.firebaseapp.com",
-#   projectId: "nextgenmarketplace-3c041",
-#   storageBucket: "nextgenmarketplace-3c041.firebasestorage.app",
-#   messagingSenderId: "647637034752",
-#   appId: "1:647637034752:web:d188f7820264ad6a10b5e5",
-#   measurementId: "G-XKD3BYRLJM"
-# };
-
-# Initialize the app
-st.set_page_config(
-    page_title="NextGenMarket - Buy & Barter Marketplace",
-    page_icon="🔄",
-    layout="wide"
-)
-
-# Initialize Firebase (in production, use proper auth credentials)
-# @st.cache_resource
-# def initialize_firebase():
-#     try:
-#         firebase_admin.get_app()
-#     except ValueError:
-#         # Use this in development, replace with actual credentials in production
-#         cred = credentials.Certificate("firebase-key.json")
-#         firebase_admin.initialize_app(cred)
-#     return firestore.client()
 
 # Replace Firebase with mock object during testing
 class MockDB:
@@ -66,7 +32,13 @@ class MockDB:
         return MockCollection()
 
 db = MockDB()
-# db = initialize_firebase()
+
+# Initialize the app
+st.set_page_config(
+    page_title="NextGenMarket - Buy & Barter Marketplace",
+    page_icon="🔄",
+    layout="wide"
+)
 
 # Session state initialization
 if 'user_id' not in st.session_state:
@@ -77,6 +49,10 @@ if 'username' not in st.session_state:
     st.session_state.username = ""
 if 'active_tab' not in st.session_state:
     st.session_state.active_tab = "Browse"
+if 'cart_items' not in st.session_state:
+    st.session_state.cart_items = []
+if 'search_query' not in st.session_state:
+    st.session_state.search_query = ""
 
 # Utility functions
 def get_trade_value(item_description, category, condition, images=None):
@@ -172,19 +148,26 @@ def create_item_card(item, is_detail=False, show_trade_btn=True):
     col1, col2 = st.columns([1, 3])
     
     with col1:
-        # Placeholder for image
-        st.image("https://via.placeholder.com/150", use_column_width=True)
+        # Use actual image if available, otherwise use placeholder
+        image_url = item.get('image_url', "https://via.placeholder.com/150")
+        st.image(image_url, use_container_width=True)
     
     with col2:
         st.subheader(item['title'])
         
         # Display price and barter status
-        price_col, barter_col = st.columns(2)
+        price_col, barter_col, action_col = st.columns([1, 1, 1])
         with price_col:
             st.write(f"💰 ${item['price']}")
         with barter_col:
             if item.get('barter_available', False):
                 st.write("🔄 Available for trade")
+        with action_col:
+            if not is_detail and item not in st.session_state.cart_items:
+                if st.button("🛒 Add to Cart", key=f"cart_{item['id']}"):
+                    st.session_state.cart_items.append(item)
+                    st.success("Added to cart!")
+                    st.rerun()
         
         st.write(f"**Condition:** {item['condition']}")
         st.write(f"**Category:** {item['category']}")
@@ -207,7 +190,7 @@ def create_item_card(item, is_detail=False, show_trade_btn=True):
                         if st.button("Propose Trade", key=f"trade_{item['id']}"):
                             st.session_state.active_tab = "Propose Trade"
                             st.session_state.trade_item = item
-                            st.experimental_rerun()
+                            st.rerun()
             else:
                 st.info("This is your listing")
         else:
@@ -219,59 +202,105 @@ def create_item_card(item, is_detail=False, show_trade_btn=True):
             if st.button("View Details", key=f"view_{item['id']}"):
                 st.session_state.active_tab = "Item Detail"
                 st.session_state.detail_item = item
-                st.experimental_rerun()
+                st.rerun()
 
 # UI Components
+def top_nav():
+    # Create a container for the top navigation
+    with st.container():
+        # Add a light gray background
+        st.markdown(
+            """
+            <style>
+            .top-nav {
+                background-color: #f8f9fa;
+                padding: 1rem;
+                border-bottom: 1px solid #dee2e6;
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                z-index: 1000;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+        
+        # Create three columns for search, logo, and profile
+        col1, col2, col3 = st.columns([3, 1, 1])
+        
+        with col1:
+            # Global search bar
+            search_query = st.text_input("🔍", placeholder="Search across all items...", 
+                                       value=st.session_state.search_query,
+                                       label_visibility="collapsed")
+            if search_query != st.session_state.search_query:
+                st.session_state.search_query = search_query
+                st.session_state.active_tab = "Browse"
+                st.rerun()
+        
+        with col2:
+            # Cart button with item count
+            cart_count = len(st.session_state.cart_items)
+            if st.button(f"🛒 Cart ({cart_count})", use_container_width=True):
+                st.session_state.active_tab = "Cart"
+                st.rerun()
+        
+        with col3:
+            # Profile section
+            if st.session_state.logged_in:
+                col3_1, col3_2 = st.columns([3, 2])
+                with col3_1:
+                    if st.button("👤 " + st.session_state.username[:10] + "...", use_container_width=True):
+                        st.session_state.active_tab = "Profile"
+                        st.rerun()
+                with col3_2:
+                    if st.button("Logout", use_container_width=True):
+                        st.session_state.logged_in = False
+                        st.session_state.username = ""
+                        st.session_state.active_tab = "Browse"
+                        st.rerun()
+            else:
+                if st.button("👤 Login / Register", use_container_width=True):
+                    st.session_state.active_tab = "Login"
+                    st.rerun()
+
 def header():
-    col1, col2, col3 = st.columns([3, 3, 2])
-    
-    with col1:
-        st.title("🔄 NextGen Marketplace")
-        st.write("Buy • Sell • Barter • Build Community")
-    
-    with col3:
-        if st.session_state.logged_in:
-            st.write(f"Welcome, {st.session_state.username}!")
-            if st.button("Logout"):
-                st.session_state.logged_in = False
-                st.session_state.username = ""
-                st.experimental_rerun()
-        else:
-            if st.button("Login / Register"):
-                st.session_state.active_tab = "Login"
-                st.experimental_rerun()
+    st.title("🔄 NextGen Marketplace")
+    st.write("Buy • Sell • Barter • Build Community")
 
 def sidebar():
     with st.sidebar:
         st.title("Navigation")
         
-        if st.button("🔍 Browse Marketplace"):
+        if st.button("🔍 Browse Marketplace", use_container_width=True):
             st.session_state.active_tab = "Browse"
-            st.experimental_rerun()
+            st.rerun()
             
-        if st.button("➕ Create Listing"):
+        if st.button("➕ Create Listing", use_container_width=True):
             if st.session_state.logged_in:
                 st.session_state.active_tab = "Create Listing"
             else:
                 st.session_state.active_tab = "Login"
                 st.session_state.redirect_after_login = "Create Listing"
-            st.experimental_rerun()
+            st.rerun()
             
-        if st.button("🧰 My Listings"):
+        if st.button("🧰 My Listings", use_container_width=True):
             if st.session_state.logged_in:
                 st.session_state.active_tab = "My Listings"
             else:
                 st.session_state.active_tab = "Login"
                 st.session_state.redirect_after_login = "My Listings"
-            st.experimental_rerun()
+            st.rerun()
             
-        if st.button("📋 Trade Proposals"):
+        if st.button("📋 Trade Proposals", use_container_width=True):
             if st.session_state.logged_in:
                 st.session_state.active_tab = "Trade Proposals"
             else:
                 st.session_state.active_tab = "Login"
                 st.session_state.redirect_after_login = "Trade Proposals"
-            st.experimental_rerun()
+            st.rerun()
             
         st.divider()
         st.write("### Filter by Category")
@@ -279,10 +308,10 @@ def sidebar():
                      "Toys & Games", "Books", "Handmade", "Services", "Other"]
         
         for category in categories:
-            if st.button(category, key=f"cat_{category}"):
+            if st.button(category, key=f"cat_{category}", use_container_width=True):
                 st.session_state.active_tab = "Browse"
                 st.session_state.selected_category = category
-                st.experimental_rerun()
+                st.rerun()
 
 def login_page():
     st.header("Login / Register")
@@ -293,20 +322,22 @@ def login_page():
         username = st.text_input("Username", key="login_username")
         password = st.text_input("Password", type="password", key="login_password")
         
-        if st.button("Login"):
-            # In a real app, authenticate with Firebase Auth
-            # For this demo, we'll just set logged in to true
-            st.session_state.logged_in = True
-            st.session_state.username = username
-            
-            # Redirect if needed
-            if 'redirect_after_login' in st.session_state:
-                st.session_state.active_tab = st.session_state.redirect_after_login
-                del st.session_state.redirect_after_login
-            else:
-                st.session_state.active_tab = "Browse"
+        if st.button("Login", use_container_width=True):
+            if username and password:  # Basic validation
+                st.session_state.logged_in = True
+                st.session_state.username = username
                 
-            st.experimental_rerun()
+                if 'redirect_after_login' in st.session_state:
+                    next_page = st.session_state.redirect_after_login
+                    del st.session_state.redirect_after_login
+                    st.success(f"Welcome {username}! You've successfully logged in.")
+                    st.session_state.active_tab = next_page
+                else:
+                    st.success(f"Welcome {username}! You've successfully logged in.")
+                    st.session_state.active_tab = "Browse"
+                st.rerun()
+            else:
+                st.error("Please enter both username and password")
     
     with tab2:
         new_username = st.text_input("Choose Username", key="reg_username")
@@ -314,23 +345,24 @@ def login_page():
         new_password = st.text_input("Create Password", type="password", key="reg_password")
         confirm_password = st.text_input("Confirm Password", type="password", key="reg_confirm")
         
-        if st.button("Register"):
-            # For demo purposes, this just logs the user in
-            st.session_state.logged_in = True
-            st.session_state.username = new_username
-            st.session_state.active_tab = "Browse"
-            st.experimental_rerun()
+        if st.button("Register", use_container_width=True):
+            if new_username and email and new_password and confirm_password:
+                if new_password == confirm_password:
+                    st.session_state.logged_in = True
+                    st.session_state.username = new_username
+                    st.success(f"Welcome {new_username}! Your account has been created successfully.")
+                    st.session_state.active_tab = "Browse"
+                    st.rerun()
+                else:
+                    st.error("Passwords do not match")
+            else:
+                st.error("Please fill in all fields")
 
 def browse_marketplace():
-    st.header("Browse Marketplace")
-    
-    # Search and filters
-    col1, col2, col3 = st.columns(3)
+    # Remove the search bar from here since it's now in the top nav
+    col1, col2 = st.columns(2)
     
     with col1:
-        search_term = st.text_input("Search items", placeholder="What are you looking for?")
-    
-    with col2:
         selected_category = st.selectbox(
             "Category",
             ["All Categories", "Electronics", "Clothing", "Home Goods", "Tools", 
@@ -338,7 +370,7 @@ def browse_marketplace():
             index=0
         )
     
-    with col3:
+    with col2:
         sort_by = st.selectbox(
             "Sort by",
             ["Newest First", "Price: Low to High", "Price: High to Low", "Trade Value"]
@@ -347,32 +379,96 @@ def browse_marketplace():
     # Filter for barter-only items
     barter_only = st.checkbox("Show only items available for trade")
     
-    # Get items from Firebase
-    # For demo purposes, create mock data
-    items = []
+    # Use the global search query if it exists
+    search_term = st.session_state.search_query
     
-    # In real app, this would query Firebase
-    for i in range(10):
-        category = random.choice(["Electronics", "Clothing", "Home Goods", "Tools", 
-                                "Toys & Games", "Books", "Handmade", "Services", "Other"])
-        condition = random.choice(["New", "Like New", "Good", "Fair", "Poor"])
-        barter = random.choice([True, False, True])  # More likely to be available for barter
-        price = random.randint(10, 500)
-        
-        item = {
-            'id': f"item_{i}",
-            'title': f"Sample Item {i+1}",
-            'description': f"This is a sample description for item {i+1}. It provides details about the condition, features, and any other relevant information.",
-            'price': price,
-            'category': category,
-            'condition': condition,
-            'barter_available': barter,
-            'user_id': f"user_{random.randint(1, 10)}",
-            'username': f"user_{random.randint(1, 10)}",
+    # Realistic mock data
+    items = [
+        {
+            'id': 'item_1',
+            'title': 'PlayStation 4 Pro (1TB) - Like New',
+            'description': 'PS4 Pro in excellent condition. Includes original controller, power cable, and HDMI cable. Only used for 6 months, selling because I upgraded to PS5.',
+            'price': 250,
+            'category': 'Electronics',
+            'condition': 'Like New',
+            'barter_available': True,
+            'user_id': 'user_1',
+            'username': 'GamerPro',
             'created_at': '2025-03-20',
-            'trade_value': get_trade_value("Sample description", category, condition)
+            'trade_value': 280,
+            'image_url': 'https://images.unsplash.com/photo-1486401899868-0e435ed85128?ixlib=rb-1.2.1&auto=format&fit=crop&w=1050&q=80'
+        },
+        {
+            'id': 'item_2',
+            'title': 'Handcrafted Boho Dreamcatcher',
+            'description': 'Beautiful handmade dreamcatcher with natural feathers and wooden beads. Perfect for bedroom or living room decor. Each piece is unique!',
+            'price': 45,
+            'category': 'Handmade',
+            'condition': 'New',
+            'barter_available': True,
+            'user_id': 'user_2',
+            'username': 'CraftLover',
+            'created_at': '2025-03-19',
+            'trade_value': 50,
+            'image_url': 'https://images.unsplash.com/photo-1596360629200-740a8a92d5c4?ixlib=rb-1.2.1&auto=format&fit=crop&w=1050&q=80'
+        },
+        {
+            'id': 'item_3',
+            'title': 'Vintage Leather Jacket - Size M',
+            'description': 'Genuine leather jacket in classic brown. Some natural wear adds character. Perfect for that retro look!',
+            'price': 120,
+            'category': 'Clothing',
+            'condition': 'Good',
+            'barter_available': True,
+            'user_id': 'user_3',
+            'username': 'VintageFinder',
+            'created_at': '2025-03-18',
+            'trade_value': 150,
+            'image_url': 'https://images.unsplash.com/photo-1551028719-00167b16eac5?ixlib=rb-1.2.1&auto=format&fit=crop&w=1050&q=80'
+        },
+        {
+            'id': 'item_4',
+            'title': 'Custom Beaded Earrings Set',
+            'description': 'Handmade beaded earrings set (3 pairs). Colors: turquoise, coral, and silver. Perfect for summer!',
+            'price': 35,
+            'category': 'Handmade',
+            'condition': 'New',
+            'barter_available': True,
+            'user_id': 'user_4',
+            'username': 'BeadArtist',
+            'created_at': '2025-03-17',
+            'trade_value': 40,
+            'image_url': 'https://images.unsplash.com/photo-1630019852942-f89202989a59?ixlib=rb-1.2.1&auto=format&fit=crop&w=1050&q=80'
+        },
+        {
+            'id': 'item_5',
+            'title': 'MacBook Air M1 (2020)',
+            'description': 'Space Gray MacBook Air with M1 chip. 8GB RAM, 256GB SSD. Includes charger and original box. Perfect condition!',
+            'price': 750,
+            'category': 'Electronics',
+            'condition': 'Like New',
+            'barter_available': False,
+            'user_id': 'user_5',
+            'username': 'TechDeals',
+            'created_at': '2025-03-16',
+            'trade_value': 800,
+            'image_url': 'https://images.unsplash.com/photo-1611186871348-b1ce696e52c9?ixlib=rb-1.2.1&auto=format&fit=crop&w=1050&q=80'
+        },
+        {
+            'id': 'item_6',
+            'title': 'Yoga Mat + Blocks Set',
+            'description': 'Premium yoga mat (6mm thick) with 2 cork blocks and strap. Perfect for home practice!',
+            'price': 55,
+            'category': 'Sports & Fitness',
+            'condition': 'Good',
+            'barter_available': True,
+            'user_id': 'user_6',
+            'username': 'YogaLife',
+            'created_at': '2025-03-15',
+            'trade_value': 65,
+            'image_url': 'https://images.unsplash.com/photo-1601925260368-ae2f83cf8b7f?ixlib=rb-1.2.1&auto=format&fit=crop&w=1050&q=80'
         }
-        items.append(item)
+    ]
     
     # Apply filters
     if selected_category != "All Categories":
@@ -392,7 +488,6 @@ def browse_marketplace():
         items = sorted(items, key=lambda x: x['price'], reverse=True)
     elif sort_by == "Trade Value":
         items = sorted(items, key=lambda x: x['trade_value'], reverse=True)
-    # Default is "Newest First" which is fine as is
     
     # Display items
     if not items:
@@ -412,7 +507,7 @@ def item_detail_page():
     # Back button
     if st.button("← Back to Marketplace"):
         st.session_state.active_tab = "Browse"
-        st.experimental_rerun()
+        st.rerun()
     
     st.header(item['title'])
     create_item_card(item, is_detail=True)
@@ -458,13 +553,13 @@ def item_detail_page():
                     
                     if st.button("View This Item", key=f"view_trade_{trade_item['id']}"):
                         st.session_state.detail_item = trade_item
-                        st.experimental_rerun()
+                        st.rerun()
                     
                     if st.button("Propose This Trade", key=f"propose_{trade_item['id']}"):
                         st.session_state.active_tab = "Propose Trade"
                         st.session_state.trade_item = trade_item
                         st.session_state.my_item = item
-                        st.experimental_rerun()
+                        st.rerun()
 
 def create_listing_page():
     st.header("Create New Listing")
@@ -493,7 +588,7 @@ def create_listing_page():
     with col2:
         barter_available = st.checkbox("Available for trade/barter", value=True)
     
-    st.file_uploader("Upload Images (Max 5)", accept_multiple_files=True, type=["jpg", "jpeg", "png"])
+    uploaded_files = st.file_uploader("Upload Images (Max 5)", accept_multiple_files=True, type=["jpg", "jpeg", "png"])
     
     if st.button("Preview Trade Value"):
         trade_value = get_trade_value(description, category, condition)
@@ -501,14 +596,14 @@ def create_listing_page():
         st.info(f"Estimated Trade Value: ${trade_value}")
         st.write("This is what our AI thinks your item is worth for bartering purposes.")
     
-    if st.button("Create Listing"):
+    if st.button("Create Listing", use_container_width=True):
         if not title or not description or not price:
             st.error("Please fill in all required fields")
         else:
-            # In a real app, save to Firebase
-            st.success("Your listing has been created successfully!")
+            st.success("🎉 Your listing has been created successfully!")
+            st.balloons()
             st.session_state.active_tab = "My Listings"
-            st.experimental_rerun()
+            st.rerun()
 
 def my_listings_page():
     st.header("My Listings")
@@ -610,7 +705,8 @@ def propose_trade_page():
             'user_id': st.session_state.user_id,
             'username': st.session_state.username or "Me",
             'created_at': '2025-03-18',
-            'trade_value': get_trade_value("Sample description", category, condition)
+            'trade_value': get_trade_value("Sample description", category, condition),
+            'image_url': "https://via.placeholder.com/150"  # Add placeholder image
         }
         my_items.append(item)
     
@@ -666,23 +762,101 @@ def propose_trade_page():
     message = st.text_area("Message to the other trader (optional)", 
                           placeholder="Explain why you think this is a good trade...")
     
+    col1, col2 = st.columns(2)
+    
     # Submit proposal
-    if st.button("Send Trade Proposal"):
-        st.success("Your trade proposal has been sent! You'll be notified when the other person responds.")
-        st.session_state.active_tab = "Trade Proposals"
-        st.experimental_rerun()
+    with col1:
+        if st.button("Send Trade Proposal", use_container_width=True):
+            st.success("🤝 Your trade proposal has been sent! You'll be notified when the other person responds.")
+            st.balloons()
+            st.session_state.active_tab = "Trade Proposals"
+            st.rerun()
     
     # Cancel
-    if st.button("Cancel"):
-        st.session_state.active_tab = "Browse"
-        if 'trade_item' in st.session_state:
-            del st.session_state.trade_item
-        if 'my_item' in st.session_state:
-            del st.session_state.my_item
-        st.experimental_rerun()
+    with col2:
+        if st.button("Cancel", use_container_width=True):
+            st.session_state.active_tab = "Browse"
+            if 'trade_item' in st.session_state:
+                del st.session_state.trade_item
+            if 'my_item' in st.session_state:
+                del st.session_state.my_item
+            st.rerun()
+
+def cart_page():
+    st.header("Shopping Cart")
+    
+    if not st.session_state.cart_items:
+        st.info("Your cart is empty")
+        if st.button("Browse Marketplace"):
+            st.session_state.active_tab = "Browse"
+            st.rerun()
+    else:
+        total = 0
+        for item in st.session_state.cart_items:
+            st.divider()
+            col1, col2, col3 = st.columns([3, 1, 1])
+            
+            with col1:
+                st.write(f"**{item['title']}**")
+                st.write(f"${item['price']}")
+            
+            with col2:
+                if st.button("Remove", key=f"remove_{item['id']}"):
+                    st.session_state.cart_items.remove(item)
+                    st.rerun()
+            
+            total += item['price']
+        
+        st.divider()
+        st.write(f"**Total: ${total}**")
+        
+        if st.button("Proceed to Checkout", use_container_width=True):
+            st.success("🎉 Order placed successfully!")
+            st.balloons()
+            st.session_state.cart_items = []
+            st.rerun()
+
+def profile_page():
+    st.header("My Profile")
+    
+    if not st.session_state.logged_in:
+        st.error("Please log in to view your profile")
+        login_page()
+        return
+    
+    # Profile Stats
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Active Listings", "5")
+    with col2:
+        st.metric("Completed Trades", "12")
+    with col3:
+        st.metric("Rating", "4.8 ⭐")
+    
+    # Quick Actions
+    st.subheader("Quick Actions")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("📦 My Listings", use_container_width=True):
+            st.session_state.active_tab = "My Listings"
+            st.rerun()
+    with col2:
+        if st.button("🤝 Trade Proposals", use_container_width=True):
+            st.session_state.active_tab = "Trade Proposals"
+            st.rerun()
+    
+    # Profile Settings
+    st.subheader("Profile Settings")
+    with st.expander("Edit Profile"):
+        st.text_input("Display Name", value=st.session_state.username)
+        st.text_input("Email", value="user@example.com")
+        st.text_area("Bio", value="I love trading and finding unique items!")
+        if st.button("Save Changes"):
+            st.success("Profile updated successfully!")
 
 # Main App Logic
 def main():
+    top_nav()
     header()
     sidebar()
     
@@ -717,6 +891,10 @@ def main():
         else:
             st.error("Please log in to propose trades")
             login_page()
+    elif st.session_state.active_tab == "Cart":
+        cart_page()
+    elif st.session_state.active_tab == "Profile":
+        profile_page()
 
 if __name__ == "__main__":
     main()
