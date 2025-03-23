@@ -1,25 +1,32 @@
 # firebase_config.py - Firebase configuration and initialization
 import os
+from pathlib import Path
 import firebase_admin
 from firebase_admin import credentials, firestore, auth, storage
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Firebase config for client-side auth
 firebase_config = {
-    "apiKey": "AIzaSyCOaOWgmWZACwroiwMk8PgZ3FkouTFf7zs",
-    "authDomain": "nextgenmarketplace-3c041.firebaseapp.com",
-    "projectId": "nextgenmarketplace-3c041",
-    "storageBucket": "nextgenmarketplace-3c041.appspot.com",
-    "messagingSenderId": "647637034752",
-    "appId": "1:647637034752:web:d188f7820264ad6a10b5e5",
-    "measurementId": "G-XKD3BYRLJM",
-    "databaseURL": "https://nextgenmarketplace-3c041-default-rtdb.firebaseio.com"
+    "apiKey": "AIzaSyAATMva5buJTHF2tMjGRkTx5rz8SClKmV4",
+    "authDomain": "nextgenmarketplace.firebaseapp.com",
+    "projectId": "nextgenmarketplace",
+    "storageBucket": "nextgenmarketplace.appspot.com",
+    "messagingSenderId": "1234567890",
+    "appId": "1:1234567890:web:abcdef1234567890",
+    "databaseURL": "https://nextgenmarketplace-default-rtdb.firebaseio.com"
 }
 
 # Initialize Firebase Admin SDK
 try:
-    cred_path = os.path.join(os.path.dirname(__file__), "nextgenmarketplace-3c041-firebase-adminsdk-fbsvc-a51be76f07.json")
-    if os.path.exists(cred_path):
-        cred = credentials.Certificate(cred_path)
+    # Get the absolute path to the service account key file
+    current_dir = Path(__file__).parent
+    cred_path = current_dir / "nextgenmarketplace-3c041-firebase-adminsdk-fbsvc-a51be76f07.json"
+    
+    if cred_path.exists():
+        cred = credentials.Certificate(str(cred_path))
         if not firebase_admin._apps:
             firebase_app = firebase_admin.initialize_app(cred)
         else:
@@ -34,7 +41,7 @@ try:
         auth = None
         storage = None
 except Exception as e:
-    print(f"Error initializing Firebase Admin SDK: {str(e)}")
+    print(f"Error initializing Firebase: {str(e)}")
     firebase_app = None
     db = None
     auth = None

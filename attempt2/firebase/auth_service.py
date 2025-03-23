@@ -278,7 +278,7 @@ def update_password(user_id: str, new_password: str) -> Dict:
 
 def login_user(email: str, password: str) -> Dict:
     """
-    Login a user with Firebase Authentication
+    Login a user with email and password
     
     Args:
         email (str): User's email
@@ -295,36 +295,41 @@ def login_user(email: str, password: str) -> Dict:
         if not validate_email(email):
             return {'success': False, 'error': 'Invalid email format'}
         if not validate_password(password):
-            return {'success': False, 'error': 'Invalid password'}
+            return {'success': False, 'error': 'Password does not meet security requirements'}
         
-        # Get user from Firebase Auth
-        user = auth.get_user_by_email(email)
-        
+        # Try to sign in with Firebase Auth
+        try:
+            user = auth.get_user_by_email(email)
+        except auth.UserNotFoundError:
+            return {'success': False, 'error': 'User not found'}
+            
         # Get user profile from Firestore
-        users_ref = db.collection('users')
-        user_doc = users_ref.where('email', '==', email).limit(1).get()
-        
-        if not user_doc:
+        user_doc = db.collection('users').document(user.uid).get()
+        if not user_doc.exists:
             return {'success': False, 'error': 'User profile not found'}
             
-        user_data = user_doc[0].to_dict()
+        user_data = user_doc.to_dict()
         
-        # Update last login
-        user_data['last_login'] = datetime.datetime.now()
-        users_ref.document(user_data['user_id']).update({'last_login': user_data['last_login']})
+        # Update last login time
+        db.collection('users').document(user.uid).update({
+            'last_login': datetime.datetime.now()
+        })
         
         return {
             'success': True,
-            'user_id': user_data['user_id'],
-            'email': user_data['email'],
+            'user_id': user.uid,
+            'email': user.email,
             'username': user_data.get('username', '')
         }
-    except auth.UserNotFoundError:
-        return {'success': False, 'error': 'User not found'}
-    except auth.InvalidPasswordError:
-        return {'success': False, 'error': 'Invalid password'}
+        
     except Exception as e:
-        return {'success': False, 'error': str(e)}
+        error_message = str(e)
+        if "INVALID_PASSWORD" in error_message:
+            return {'success': False, 'error': 'Invalid password'}
+        elif "EMAIL_NOT_FOUND" in error_message:
+            return {'success': False, 'error': 'Email not found'}
+        else:
+            return {'success': False, 'error': f'Login failed: {error_message}'}
 
 def logout():
     """Logout the current user"""

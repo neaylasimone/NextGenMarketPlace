@@ -7,6 +7,7 @@ import datetime
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
 from .firebase_config import firebase_config, db, auth as firebase_auth
+from pathlib import Path
 
 # Initialize Firebase Admin SDK
 try:
@@ -450,8 +451,24 @@ def matches_page():
                                 st.write(f"**Listed by:** {owner['user'].display_name}")
 
 def initialize_firebase():
-    """Initialize Firebase and return the auth client"""
-    if auth_client is None:
-        st.error("Firebase client not initialized. Please check your Firebase configuration.")
+    """Initialize Firebase client"""
+    try:
+        # Get the absolute path to the service account key file
+        current_dir = Path(__file__).parent
+        cred_path = current_dir / "nextgenmarketplace-3c041-firebase-adminsdk-fbsvc-a51be76f07.json"
+        
+        if not cred_path.exists():
+            st.error("Firebase Admin SDK credentials file not found. Please add the credentials file to the firebase directory.")
+            return None
+            
+        # Initialize Firebase Admin SDK
+        if not firebase_admin._apps:
+            cred = credentials.Certificate(str(cred_path))
+            firebase_admin.initialize_app(cred)
+            
+        # Initialize Firebase client
+        firebase = pyrebase.initialize_app(firebase_config)
+        return firebase
+    except Exception as e:
+        st.error(f"Error initializing Firebase client: {str(e)}")
         return None
-    return auth_client
