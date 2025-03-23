@@ -4,34 +4,80 @@
 
 import streamlit as st
 
-# Configure Streamlit page - MUST BE FIRST STREAMLIT COMMAND
 st.set_page_config(
     page_title="NextGenMarket - Buy & Barter Marketplace",
     page_icon="🔄",
     layout="wide"
 )
 
-import pandas as pd
+import firebase_admin
+from firebase_admin import credentials, firestore, auth
 from datetime import datetime
+import json
+import os
+from dotenv import load_dotenv
+from firebase.firebase_config import initialize_firebase
+from firebase.item_service import (
+    add_item, get_item, get_all_items, update_item, delete_item,
+    search_items, get_user_items
+)
+from firebase.gemini import generate_content, search_items_semantic
+
+# Configure Streamlit page - MUST BE FIRST STREAMLIT COMMAND
+# Load environment variables
+load_dotenv()
+
+# Initialize Firebase Admin SDK
+initialize_firebase()
+db = firestore.client()
+
+# Define categories
+CATEGORIES = {
+    "Electronics": "📱",
+    "Clothing": "👕",
+    "Home Goods": "🏠",
+    "Tools": "🔧",
+    "Toys & Games": "🎮",
+    "Books": "📚",
+    "Handmade": "🎨",
+    "Services": "💼",
+    "Other": "📦"
+}
+
+import pandas as pd
 import uuid
 import random
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
-from firebase.firebase_app import initialize_firebase
-from firebase.auth_service import register_user, login_user, get_user_profile
-from firebase.item_service import (
-    add_item, get_item, update_item, delete_item,
-    search_items, get_user_items, add_to_wishlist,
-    remove_from_wishlist, get_wishlist_items, find_potential_matches
-)
-from firebase.search_service import search_items, find_potential_matches, find_trade_matches, rate_trade_value
-from firebase.user_service import add_to_wishlist, remove_from_wishlist, update_user_profile
-import json
-import os
 
-# Initialize Firebase
-auth = initialize_firebase()
+# Import mock data
+from mock_data import (
+    MOCK_USERS, MOCK_ITEMS, MOCK_TRADE_PROPOSALS,
+    get_mock_search_results, get_mock_user_profile,
+    get_mock_item, get_mock_trade_proposals,
+    get_mock_user_items, rate_mock_trade_value
+)
+
+# Initialize session state
+if 'user_id' not in st.session_state:
+    st.session_state.user_id = None
+if 'user_email' not in st.session_state:
+    st.session_state.user_email = None
+if 'username' not in st.session_state:
+    st.session_state.username = None
+if 'active_tab' not in st.session_state:
+    st.session_state.active_tab = "Welcome"
+if 'editing_listing' not in st.session_state:
+    st.session_state.editing_listing = None
+if 'trade_item' not in st.session_state:
+    st.session_state.trade_item = None
+if 'logged_in' not in st.session_state:
+    st.session_state.logged_in = False
+if 'cart_items' not in st.session_state:
+    st.session_state.cart_items = []
+if 'search_query' not in st.session_state:
+    st.session_state.search_query = ""
 
 # Initialize the app with custom styling
 st.markdown("""
@@ -101,83 +147,237 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize session state
-if 'user_id' not in st.session_state:
-    st.session_state.user_id = None
-if 'user_email' not in st.session_state:
-    st.session_state.user_email = None
-if 'username' not in st.session_state:
-    st.session_state.username = None
-if 'active_tab' not in st.session_state:
-    st.session_state.active_tab = "Welcome"
-if 'editing_listing' not in st.session_state:
-    st.session_state.editing_listing = None
-if 'trade_item' not in st.session_state:
-    st.session_state.trade_item = None
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-if 'cart_items' not in st.session_state:
-    st.session_state.cart_items = []
-if 'search_query' not in st.session_state:
-    st.session_state.search_query = ""
+# Mock authentication functions
+def login_user(email, password):
+    """Login user using Firebase Authentication"""
+    try:
+        # Get user by email
+        user = auth.get_user_by_email(email)
+        
+        # Get user data from Firestore
+        user_doc = db.collection('users').document(user.uid).get()
+        if not user_doc.exists:
+            return {'success': False, 'error': 'User profile not found'}
+        
+        user_data = user_doc.to_dict()
+        
+        return {
+            'success': True,
+            'user_id': user_data['id'],
+            'email': user_data['email'],
+            'username': user_data['username']
+        }
+    except Exception as e:
+        print(f"Error logging in user: {str(e)}")
+        return {'success': False, 'error': str(e)}
+
+def register_user(email, password, username):
+    """Register a new user in Firebase"""
+    try:
+        # Create user in Firebase Auth
+        user = auth.create_user(
+            email=email,
+            password=password,
+            display_name=username
+        )
+        
+        # Create user document in Firestore
+        user_data = {
+            'id': user.uid,
+            'email': email,
+            'username': username,
+            'created_at': datetime.now(),
+            'profile': {
+                'bio': '',
+                'location': '',
+                'rating': 5.0,
+                'completed_trades': 0
+            }
+        }
+        
+        # Add to users collection
+        db.collection('users').document(user.uid).set(user_data)
+        
+        return {
+            'success': True,
+            'user_id': user.uid,
+            'email': email,
+            'username': username
+        }
+    except Exception as e:
+        print(f"Error registering user: {str(e)}")
+        return {'success': False, 'error': str(e)}
+
+def get_user_profile(user_id):
+    """Get user profile from Firestore"""
+    try:
+        # Get user document from Firestore
+        user_doc = db.collection('users').document(user_id).get()
+        if not user_doc.exists:
+            return None
+        
+        user_data = user_doc.to_dict()
+        return user_data
+    except Exception as e:
+        print(f"Error getting user profile: {str(e)}")
+        return None
+
+# Mock item service functions
+def add_item(user_id, item_data):
+    """Mock add item function"""
+    new_item = {
+        'id': f"item{len(MOCK_ITEMS) + 1}",
+        'user_id': user_id,
+        **item_data
+    }
+    MOCK_ITEMS.append(new_item)
+    return {'success': True, 'item_id': new_item['id']}
+
+def get_item(item_id):
+    """Mock get item function"""
+    return get_mock_item(item_id)
+
+def get_all_items():
+    """Get all active items from Firestore"""
+    try:
+        # Get all items from Firestore
+        items_ref = db.collection('items').where('active', '==', True).get()
+        items = [item.to_dict() for item in items_ref]
+        return items
+    except Exception as e:
+        print(f"Error getting all items: {str(e)}")
+        return []
+    
+def update_item(item_id, user_id, item_data):
+    """Mock update item function"""
+    for item in MOCK_ITEMS:
+        if item['id'] == item_id and item['user_id'] == user_id:
+            item.update(item_data)
+            return {'success': True}
+    return {'success': False, 'error': 'Item not found or unauthorized'}
+
+def delete_item(item_id, user_id):
+    """Mock delete item function"""
+    for item in MOCK_ITEMS:
+        if item['id'] == item_id and item['user_id'] == user_id:
+            MOCK_ITEMS.remove(item)
+            return {'success': True}
+    return {'success': False, 'error': 'Item not found or unauthorized'}
+
+def search_items(query, category=None):
+    """Mock search items function"""
+    results = get_mock_search_results(query, category)
+    return {'success': True, 'items': results}
+
+def get_user_items(user_id):
+    """Mock get user items function"""
+    items = get_mock_user_items(user_id)
+    return {'success': True, 'items': items}
+
+# Mock trade service functions
+def propose_trade(from_user_id, to_user_id, offered_item_id, wanted_item_id, message):
+    """Mock propose trade function"""
+    new_proposal = {
+        'id': f"trade{len(MOCK_TRADE_PROPOSALS) + 1}",
+        'from_user_id': from_user_id,
+        'to_user_id': to_user_id,
+        'offered_item_id': offered_item_id,
+        'wanted_item_id': wanted_item_id,
+        'status': 'pending',
+        'created_at': datetime.now(),
+        'message': message
+    }
+    MOCK_TRADE_PROPOSALS.append(new_proposal)
+    return {'success': True, 'proposal_id': new_proposal['id']}
+
+def get_trade_proposals(user_id, direction="received"):
+    """Mock get trade proposals function"""
+    proposals = get_mock_trade_proposals(user_id, direction)
+    return {'success': True, 'proposals': proposals}
+
+def accept_trade(proposal_id, user_id):
+    """Mock accept trade function"""
+    for proposal in MOCK_TRADE_PROPOSALS:
+        if proposal['id'] == proposal_id and proposal['to_user_id'] == user_id:
+            proposal['status'] = 'accepted'
+            return {'success': True}
+    return {'success': False, 'error': 'Proposal not found or unauthorized'}
+
+def reject_trade(proposal_id, user_id):
+    """Mock reject trade function"""
+    for proposal in MOCK_TRADE_PROPOSALS:
+        if proposal['id'] == proposal_id and proposal['to_user_id'] == user_id:
+            proposal['status'] = 'rejected'
+            return {'success': True}
+    return {'success': False, 'error': 'Proposal not found or unauthorized'}
+
+# Mock search service functions
+def semantic_search(query):
+    """Mock semantic search function"""
+    return get_mock_search_results(query)
+
+def find_potential_matches(item_id, user_id):
+    """Mock find potential matches function"""
+    item = get_mock_item(item_id)
+    if not item:
+        return []
+    
+    matches = []
+    for other_item in MOCK_ITEMS:
+        if other_item['user_id'] != user_id and other_item['id'] != item_id:
+            # Simple matching based on category and price range
+            if other_item['category'] == item['category']:
+                price_diff = abs(other_item['price'] - item['price'])
+                if price_diff <= item['price'] * 0.2:  # Within 20% price difference
+                    matches.append(other_item)
+    
+    return matches
+
+def find_trade_matches(item_id, user_id):
+    """Mock find trade matches function"""
+    return find_potential_matches(item_id, user_id)
+
+def rate_trade_value(item1, item2):
+    """Mock rate trade value function"""
+    return rate_mock_trade_value(item1, item2)
 
 # Utility functions
-def create_item_card(item, is_detail=False, show_trade_btn=True):
-    """Create a card display for an item"""
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        image_url = item.get('images', [None])[0] if item.get('images') else "https://via.placeholder.com/150"
-        st.image(image_url, use_container_width=True)
-    
-    with col2:
-        st.markdown(f"<h3 style='color: #1E88E5; margin-bottom: 0.5rem;'>{item['name']}</h3>", unsafe_allow_html=True)
-        st.markdown(f"<p style='color: #666;'>{item['description']}</p>", unsafe_allow_html=True)
+def create_item_card(item):
+    """Create a card for displaying an item"""
+    with st.container():
+        # Create columns for the card layout
+        col1, col2 = st.columns([1, 2])
         
-        # Display price if for sale
-        if item.get('for_sale', False):
-            st.markdown(f"<p style='color: #FFC107; font-weight: 500;'>Price: ${item.get('price', 0)}</p>", unsafe_allow_html=True)
+        with col1:
+            # Display item image
+            try:
+                if item.get('image_url'):
+                    st.image(item['image_url'], width=150)
+                elif item.get('images') and len(item['images']) > 0:
+                    # If images is a list of file names, show a placeholder
+                    st.image("https://via.placeholder.com/150", width=150)
+                else:
+                    st.image("https://via.placeholder.com/150", width=150)
+            except Exception as e:
+                st.error(f"Error loading image: {str(e)}")
+                st.image("https://via.placeholder.com/150", width=150)
         
-        # Display trade value if for trade
-        if item.get('for_trade', False):
-            st.markdown(f"<p style='color: #4CAF50;'>Available for Trade</p>", unsafe_allow_html=True)
-            if item.get('looking_for'):
-                st.write("Looking for:")
-                for trade_item in item['looking_for']:
-                    if isinstance(trade_item, dict):
-                        # Handle dictionary format
-                        st.write(f"- {trade_item.get('item_type', 'Any')} ({trade_item.get('condition', 'Any condition')})")
-                    else:
-                        # Handle string format
-                        st.write(f"- {trade_item}")
-        
-        if item.get('condition'):
-            st.write(f"**Condition:** {item['condition']}")
-        
-        if is_detail:
-            # Additional details
-            if item.get('specs'):
-                st.write("**Specifications:**")
-                for key, value in item['specs'].items():
-                    if isinstance(value, list):
-                        st.write(f"**{key.replace('_', ' ').title()}:**")
-                        for item in value:
-                            st.write(f"- {item}")
-                    else:
-                        st.write(f"**{key.replace('_', ' ').title()}:** {value}")
+        with col2:
+            # Display item details
+            st.subheader(item.get('name', 'Unnamed Item'))
+            st.write(f"**Category:** {item.get('category', 'Uncategorized')}")
+            st.write(f"**Description:** {item.get('description', 'No description available')}")
+            st.write(f"**Condition:** {item.get('condition', 'Not specified')}")
+            st.write(f"**Location:** {item.get('location', 'Not specified')}")
             
-            # Action buttons
-            if st.session_state.logged_in and item['user_id'] != st.session_state.user_id:
-                if show_trade_btn and item.get('for_trade', False):
-                    if st.button("🔄 Propose Trade", key=f"trade_{item['id']}"):
-                        st.session_state.selected_item = item
-                        st.session_state.active_tab = "Propose Trade"
-                        st.rerun()
-                
-                if item.get('for_sale', False):
-                    if st.button("🛒 Add to Cart", key=f"cart_{item['id']}"):
-                        st.session_state.cart_items.append(item)
-                        st.success("Added to cart!")
-                        st.rerun()
+            # Add trade button
+            if st.button("Propose Trade", key=f"trade_{item.get('id')}"):
+                if 'user_id' not in st.session_state or not st.session_state.user_id:
+                    st.warning("Please log in to propose a trade")
+                else:
+                    st.session_state.selected_item = item
+                    st.session_state.active_tab = "Propose Trade"
+                    st.rerun()
 
 # UI Components
 def top_nav():
@@ -363,37 +563,66 @@ def login_page():
             else:
                 st.error("Please fill in all fields")
 
-def browse_marketplace():
+def browse_page():
+    """Display the marketplace browse page"""
     st.title("Browse Marketplace")
     
-    # Search bar
-    search_query = st.text_input("🔍 Search items", value=st.session_state.search_query)
+    # Initialize items in session state if not exists
+    if 'items' not in st.session_state:
+        st.session_state.items = []
+    
+    # Get items from Firestore
+    try:
+        items_ref = db.collection('items')
+        items = items_ref.get()
+        items = [item.to_dict() for item in items]
+        st.session_state.items = items
+    except Exception as e:
+        st.error(f"Error loading items: {str(e)}")
+        print(f"Error loading items: {str(e)}")
+        items = []
+    
+    # Search and filter options
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        search_query = st.text_input("Search items", "")
+    with col2:
+        category = st.selectbox(
+            "Category",
+            ["All"] + list(CATEGORIES.keys()),
+            index=0
+        )
+    
+    # Filter items based on search and category
+    filtered_items = items
     if search_query:
-        st.session_state.search_query = search_query
-        result = search_items(search_query)
-        if result['success']:
-            items = result['items']
-            if not items:
-                st.info("No items found matching your search.")
-            else:
-                st.write(f"Found {len(items)} items matching your search")
-                for item in items:
-                    create_item_card(item)
-        else:
-            st.error(f"Error searching items: {result.get('error', 'Unknown error')}")
+        search_query = search_query.lower()
+        filtered_items = [
+            item for item in filtered_items
+            if search_query in item.get('name', '').lower() or
+               search_query in item.get('description', '').lower()
+        ]
+    
+    if category != "All":
+        filtered_items = [
+            item for item in filtered_items
+            if item.get('category') == category
+        ]
+    
+    # Display items in a grid
+    if filtered_items:
+        # Calculate number of columns based on screen width
+        num_cols = 3
+        
+        # Create columns
+        cols = st.columns(num_cols)
+        
+        # Display items in grid
+        for idx, item in enumerate(filtered_items):
+            with cols[idx % num_cols]:
+                create_item_card(item)
     else:
-        # Show all active items
-        result = search_items("")  # Empty query to get all items
-        if result['success']:
-            items = result['items']
-            if not items:
-                st.info("No items available in the marketplace.")
-            else:
-                st.write(f"Showing {len(items)} items")
-                for item in items:
-                    create_item_card(item)
-        else:
-            st.error(f"Error loading items: {result.get('error', 'Unknown error')}")
+        st.info("No items found. Try adjusting your search or filters.")
 
 def item_detail_page():
     if 'detail_item' not in st.session_state:
@@ -408,7 +637,7 @@ def item_detail_page():
         st.rerun()
     
     st.header(item['title'])
-    create_item_card(item, is_detail=True)
+    create_item_card(item)
     
     # Show potential trades
     if 'barter_available' in item and item['barter_available']:
@@ -460,255 +689,412 @@ def item_detail_page():
                         st.rerun()
 
 def create_listing_page():
+    """Create a new listing"""
     st.title("Create New Listing")
     
-    with st.form("create_listing_form"):
+    # Create a form for the new listing
+    with st.form("new_listing_form"):
         # Basic Information
         st.subheader("Basic Information")
         name = st.text_input("Item Name")
         description = st.text_area("Description")
-        category = st.selectbox(
-            "Category",
-            ["Electronics", "Clothing", "Home Goods", "Tools", 
-             "Toys & Games", "Books", "Handmade", "Services", "Other"]
-        )
-        condition = st.selectbox(
-            "Condition",
-            ["New", "Like New", "Good", "Fair", "Poor"]
-        )
+        category = st.selectbox("Category", ["Electronics", "Clothing", "Books", "Home & Garden", "Sports", "Other"])
+        condition = st.selectbox("Condition", ["New", "Like New", "Good", "Fair", "Poor"])
         
-        # Additional Details
-        st.subheader("Additional Details")
-        brand = st.text_input("Brand (optional)")
-        model = st.text_input("Model (optional)")
-        year = st.text_input("Year (optional)")
-        size = st.text_input("Size (optional)")
-        color = st.text_input("Color (optional)")
-        tags = st.text_input("Tags (comma-separated, optional)")
+        # Pricing Options
+        st.subheader("Pricing")
+        pricing_type = st.radio("Pricing Type", ["Fixed Price", "Trade Only", "Both"])
         
-        # Pricing and Trade Options
-        st.subheader("Pricing & Trade Options")
-        col1, col2 = st.columns(2)
-        with col1:
-            for_sale = st.checkbox("Available for Sale")
-            if for_sale:
-                price = st.number_input("Price ($)", min_value=0.0, value=0.0)
-        with col2:
-            for_trade = st.checkbox("Available for Trade")
-            if for_trade:
-                st.write("What are you looking for?")
-                looking_for = []
-                num_trade_items = st.number_input("Number of items you're looking for", min_value=1, value=1)
-                for i in range(num_trade_items):
-                    st.write(f"Item {i+1}")
-                    trade_item = {
-                        'category': st.selectbox(
-                            f"Category for item {i+1}",
-                            ["Electronics", "Clothing", "Home Goods", "Tools", 
-                             "Toys & Games", "Books", "Handmade", "Services", "Other"],
-                            key=f"trade_cat_{i}"
-                        ),
-                        'item_type': st.text_input(f"Type of item {i+1}"),
-                        'condition': st.selectbox(
-                            f"Preferred condition for item {i+1}",
-                            ["Any", "New", "Like New", "Good", "Fair", "Poor"],
-                            key=f"trade_cond_{i}"
-                        ),
-                        'description': st.text_area(f"Description for item {i+1}")
-                    }
-                    looking_for.append(trade_item)
+        if pricing_type in ["Fixed Price", "Both"]:
+            price = st.number_input("Price ($)", min_value=0.0, value=0.0)
+        
+        # Trade Preferences
+        if pricing_type in ["Trade Only", "Both"]:
+            st.subheader("Trade Preferences")
+            trade_categories = st.multiselect(
+                "Categories you're interested in trading for",
+                ["Electronics", "Clothing", "Books", "Home & Garden", "Sports", "Other"]
+            )
+            trade_conditions = st.multiselect(
+                "Conditions you're interested in trading for",
+                ["New", "Like New", "Good", "Fair", "Poor"]
+            )
         
         # Shipping Options
-        st.subheader("Shipping Options")
-        willing_to_ship = st.checkbox("Willing to ship")
-        if willing_to_ship:
-            shipping_cost = st.number_input("Shipping cost ($)", min_value=0.0, value=0.0)
+        st.subheader("Shipping")
+        shipping_options = st.multiselect(
+            "Shipping Options",
+            ["Local Pickup", "Standard Shipping", "Express Shipping"]
+        )
         
         # Images
         st.subheader("Images")
-        uploaded_files = st.file_uploader("Upload images", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True)
+        uploaded_files = st.file_uploader("Upload Images", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True)
         
-        submit = st.form_submit_button("Create Listing")
+        # Submit button
+        submitted = st.form_submit_button("Create Listing")
         
-        if submit:
+        if submitted:
             if not name or not description or not category or not condition:
                 st.error("Please fill in all required fields")
             else:
-                # Prepare item data
-                item_data = {
-                    'name': name,
-                    'description': description,
-                    'category': category,
-                    'condition': condition,
-                    'for_sale': for_sale,
-                    'for_trade': for_trade,
-                    'created_at': datetime.datetime.now(),
-                    'active': True
-                }
-                
-                # Add optional fields if provided
-                if brand:
-                    item_data['brand'] = brand
-                if model:
-                    item_data['model'] = model
-                if year:
-                    item_data['year'] = year
-                if size:
-                    item_data['size'] = size
-                if color:
-                    item_data['color'] = color
-                if tags:
-                    item_data['tags'] = [tag.strip() for tag in tags.split(',')]
-                
-                # Add pricing if for sale
-                if for_sale:
-                    item_data['price'] = price
-                
-                # Add trade preferences if for trade
-                if for_trade:
-                    item_data['looking_for'] = looking_for
-                
-                # Add shipping information
-                item_data['shipping'] = {
-                    'willing_to_ship': willing_to_ship,
-                    'shipping_cost': shipping_cost if willing_to_ship else 0
-                }
-                
-                # Handle image uploads (in a real app, you'd upload these to a storage service)
-                if uploaded_files:
-                    # For demo, we'll just store the file names
-                    item_data['images'] = [f.name for f in uploaded_files]
-                
-                # Create the listing
-                result = add_item(st.session_state.user_id, item_data)
-                if result['success']:
+                try:
+                    # Create new item data
+                    new_item = {
+                        'name': name,
+                        'description': description,
+                        'category': category,
+                        'condition': condition,
+                        'price': price if pricing_type in ["Fixed Price", "Both"] else None,
+                        'trade_categories': trade_categories if pricing_type in ["Trade Only", "Both"] else [],
+                        'trade_conditions': trade_conditions if pricing_type in ["Trade Only", "Both"] else [],
+                        'shipping_options': shipping_options,
+                        'user_id': st.session_state.user_id,
+                        'username': st.session_state.username,
+                        'active': True,
+                        'created_at': datetime.now()
+                    }
+                    
+                    # Add to Firestore
+                    doc_ref = db.collection('items').document()
+                    new_item['id'] = doc_ref.id
+                    
+                    # Handle image uploads
+                    image_urls = []
+                    for uploaded_file in uploaded_files:
+                        try:
+                            # Upload to Firebase Storage
+                            storage_path = f"items/{doc_ref.id}/{uploaded_file.name}"
+                            bucket = storage.bucket()
+                            blob = bucket.blob(storage_path)
+                            blob.upload_from_string(uploaded_file.getvalue(), content_type=uploaded_file.type)
+                            
+                            # Get public URL
+                            blob.make_public()
+                            image_urls.append(blob.public_url)
+                        except Exception as e:
+                            st.error(f"Error uploading image {uploaded_file.name}: {str(e)}")
+                            print(f"Error uploading image: {str(e)}")
+                    
+                    new_item['images'] = image_urls
+                    
+                    # Save to Firestore
+                    doc_ref.set(new_item)
+                    
+                    # Update local state
+                    if 'items' not in st.session_state:
+                        st.session_state.items = []
+                    st.session_state.items.append(new_item)
+                    
                     st.success("Listing created successfully!")
-                    st.session_state.active_tab = "My Listings"
                     st.rerun()
-                else:
-                    st.error(f"Error creating listing: {result.get('error', 'Unknown error')}")
+                except Exception as e:
+                    st.error(f"Error creating listing: {str(e)}")
+                    print(f"Error creating listing: {str(e)}")
 
 def my_listings_page():
     st.title("My Listings")
     
-    # Get user's listings from Firebase
-    result = get_user_items(st.session_state.user_id)
-    if not result['success']:
-        st.error(f"Error fetching listings: {result.get('error', 'Unknown error')}")
-        return
-    
-    listings = result['items']
-    
-    if not listings:
-        st.info("You haven't created any listings yet.")
-        if st.button("Create Your First Listing"):
-            st.session_state.active_tab = "Create Listing"
-            st.rerun()
-    else:
-        # Display listings in a grid
-        for listing in listings:
-            with st.expander(f"{listing['name']} - {listing['category']}", expanded=True):
-                col1, col2 = st.columns([2, 1])
-                
-                with col1:
-                    st.write("**Description:**")
-                    st.write(listing['description'])
+    try:
+        # Get user's listings from Firestore
+        user_listings = db.collection('items').where('user_id', '==', st.session_state.user_id).get()
+        user_listings = [item.to_dict() for item in user_listings]
+        
+        if not user_listings:
+            st.info("You haven't created any listings yet.")
+            if st.button("Create Your First Listing"):
+                st.session_state.active_tab = "Create Listing"
+                st.rerun()
+        else:
+            # Display listings in a grid
+            for listing in user_listings:
+                with st.expander(f"{listing['name']} - {listing['category']}", expanded=True):
+                    col1, col2 = st.columns([2, 1])
                     
-                    # Display item details
-                    details = []
-                    if listing.get('brand'):
-                        details.append(f"Brand: {listing['brand']}")
-                    if listing.get('model'):
-                        details.append(f"Model: {listing['model']}")
-                    if listing.get('year'):
-                        details.append(f"Year: {listing['year']}")
-                    if listing.get('size'):
-                        details.append(f"Size: {listing['size']}")
-                    if listing.get('color'):
-                        details.append(f"Color: {listing['color']}")
+                    with col1:
+                        st.write("**Description:**")
+                        st.write(listing['description'])
+                        
+                        # Display item details
+                        details = []
+                        if listing.get('brand'):
+                            details.append(f"Brand: {listing['brand']}")
+                        if listing.get('model'):
+                            details.append(f"Model: {listing['model']}")
+                        if listing.get('year'):
+                            details.append(f"Year: {listing['year']}")
+                        if listing.get('size'):
+                            details.append(f"Size: {listing['size']}")
+                        if listing.get('color'):
+                            details.append(f"Color: {listing['color']}")
+                        
+                        if details:
+                            st.write("**Details:**")
+                            for detail in details:
+                                st.write(detail)
+                        
+                        # Display pricing and trade options
+                        st.write("**Availability:**")
+                        if listing.get('for_sale'):
+                            st.write(f"Price: ${listing.get('price', 0):.2f}")
+                        if listing.get('for_trade'):
+                            st.write("Available for trade")
+                            if listing.get('looking_for'):
+                                st.write("Looking for:")
+                                for item in listing['looking_for']:
+                                    st.write(f"- {item['item_type']} ({item['category']})")
+                        
+                        # Display shipping information
+                        if listing.get('shipping'):
+                            shipping = listing['shipping']
+                            if shipping.get('willing_to_ship'):
+                                st.write(f"Shipping available (Cost: ${shipping.get('shipping_cost', 0):.2f})")
                     
-                    if details:
-                        st.write("**Details:**")
-                        for detail in details:
-                            st.write(detail)
-                    
-                    # Display pricing and trade options
-                    st.write("**Availability:**")
-                    if listing.get('for_sale'):
-                        st.write(f"Price: ${listing.get('price', 0):.2f}")
-                    if listing.get('for_trade'):
-                        st.write("Available for trade")
-                        if listing.get('looking_for'):
-                            st.write("Looking for:")
-                            for item in listing['looking_for']:
-                                st.write(f"- {item['item_type']} ({item['category']})")
-                    
-                    # Display shipping information
-                    if listing.get('shipping'):
-                        shipping = listing['shipping']
-                        if shipping.get('willing_to_ship'):
-                            st.write(f"Shipping available (Cost: ${shipping.get('shipping_cost', 0):.2f})")
-                
-                with col2:
-                    # Display images if available
-                    if listing.get('images'):
-                        st.write("**Images:**")
-                        for image_name in listing['images']:
-                            st.image(image_name, use_container_width=True)
-                    
-                    # Listing actions
-                    st.write("**Actions:**")
-                    if st.button("Edit", key=f"edit_{listing['id']}"):
-                        st.session_state.editing_listing = listing
-                        st.session_state.active_tab = "Edit Listing"
-                        st.rerun()
-                    
-                    if st.button("Delete", key=f"delete_{listing['id']}"):
-                        if st.warning("Are you sure you want to delete this listing?"):
-                            result = delete_item(listing['id'], st.session_state.user_id)
-                            if result['success']:
-                                st.success("Listing deleted successfully!")
-                                st.rerun()
-                            else:
-                                st.error(f"Error deleting listing: {result.get('error', 'Unknown error')}")
-                    
-                    # Toggle active status
-                    status = "Active" if listing.get('active', True) else "Inactive"
-                    if st.button(f"Mark as {'Inactive' if status == 'Active' else 'Active'}", 
-                               key=f"toggle_{listing['id']}"):
-                        updated_listing = listing.copy()
-                        updated_listing['active'] = not listing.get('active', True)
-                        result = update_item(listing['id'], st.session_state.user_id, updated_listing)
-                        if result['success']:
-                            st.success(f"Listing marked as {'Inactive' if status == 'Active' else 'Active'}")
+                    with col2:
+                        # Display images if available
+                        if listing.get('images'):
+                            st.write("**Images:**")
+                            for image_name in listing['images']:
+                                try:
+                                    st.image("https://via.placeholder.com/150", width=200)
+                                except Exception as e:
+                                    st.error(f"Error loading image: {str(e)}")
+                        
+                        # Listing actions
+                        st.write("**Actions:**")
+                        if st.button("Edit", key=f"edit_{listing['id']}"):
+                            st.session_state.editing_listing = listing
+                            st.session_state.active_tab = "Edit Listing"
                             st.rerun()
-                        else:
-                            st.error(f"Error updating listing: {result.get('error', 'Unknown error')}")
+                        
+                        if st.button("Delete", key=f"delete_{listing['id']}"):
+                            if st.warning("Are you sure you want to delete this listing?"):
+                                try:
+                                    # Delete from Firestore
+                                    db.collection('items').document(listing['id']).delete()
+                                    # Remove from local state
+                                    MOCK_ITEMS = [item for item in MOCK_ITEMS if item['id'] != listing['id']]
+                                    st.success("Listing deleted successfully!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error deleting listing: {str(e)}")
+                        
+                        # Toggle active status
+                        status = "Active" if listing.get('active', True) else "Inactive"
+                        if st.button(f"Mark as {'Inactive' if status == 'Active' else 'Active'}", 
+                                   key=f"toggle_{listing['id']}"):
+                            try:
+                                # Update in Firestore
+                                db.collection('items').document(listing['id']).update({
+                                    'active': not listing.get('active', True)
+                                })
+                                # Update local state
+                                for item in MOCK_ITEMS:
+                                    if item['id'] == listing['id']:
+                                        item['active'] = not item.get('active', True)
+                                st.success(f"Listing marked as {'Inactive' if status == 'Active' else 'Active'}")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error updating listing status: {str(e)}")
+    except Exception as e:
+        st.error(f"Error loading your listings: {str(e)}")
+        print(f"Error loading listings: {str(e)}")
 
 def trade_proposals_page():
-    st.header("Trade Proposals")
+    """Display trade proposals and allow sending new proposals"""
+    st.title("Trade Proposals")
     
-    # Tabs for incoming and outgoing proposals
-    tab1, tab2 = st.tabs(["Received Proposals", "Sent Proposals"])
-    
-    with tab1:
-        st.info("You have no incoming trade proposals.")
-    
-    with tab2:
-        st.info("You have no outgoing trade proposals.")
+    # Get current user's items
+    try:
+        user_items = db.collection('items').where('user_id', '==', st.session_state.user_id).get()
+        user_items = [item.to_dict() for item in user_items]
+        
+        if not user_items:
+            st.info("You don't have any items listed yet.")
+            return
+        
+        # Get all trade proposals for user's items
+        proposals = db.collection('trade_proposals').where('item_owner_id', '==', st.session_state.user_id).get()
+        proposals = [proposal.to_dict() for proposal in proposals]
+        
+        # Display trade proposals for user's items
+        st.subheader("Trade Offers for Your Items")
+        if not proposals:
+            st.info("No trade proposals yet")
+        else:
+            for proposal in proposals:
+                with st.expander(f"Trade Offer for {proposal['item_name']}", expanded=True):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.write("**Offered By:**")
+                        st.write(f"User: {proposal['proposer_name']}")
+                        st.write(f"Item: {proposal['proposed_item_name']}")
+                        st.write(f"Category: {proposal['proposed_item_category']}")
+                        st.write(f"Condition: {proposal['proposed_item_condition']}")
+                        st.write(f"Price: ${proposal['proposed_item_price']}")
+                        st.write(f"Status: {proposal['status']}")
+                        st.write(f"Proposed: {proposal['created_at'].strftime('%Y-%m-%d %H:%M')}")
+                        
+                        # Display the message
+                        st.write("**Message:**")
+                        st.write(proposal['message'])
+                    
+                    with col2:
+                        if proposal['status'] == 'pending':
+                            st.write("**Actions:**")
+                            if st.button("Accept", key=f"accept_{proposal['id']}"):
+                                try:
+                                    # Update proposal status in Firestore
+                                    db.collection('trade_proposals').document(proposal['id']).update({
+                                        'status': 'accepted',
+                                        'accepted_at': datetime.now()
+                                    })
+                                    st.success("Trade proposal accepted!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error accepting proposal: {str(e)}")
+                                    print(f"Error accepting proposal: {str(e)}")
+                            
+                            if st.button("Reject", key=f"reject_{proposal['id']}"):
+                                try:
+                                    # Update proposal status in Firestore
+                                    db.collection('trade_proposals').document(proposal['id']).update({
+                                        'status': 'rejected',
+                                        'rejected_at': datetime.now()
+                                    })
+                                    st.success("Trade proposal rejected!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error rejecting proposal: {str(e)}")
+                                    print(f"Error rejecting proposal: {str(e)}")
+        
+        # Section to send new trade proposals
+        st.subheader("Send a Trade Proposal")
+        
+        # Get all active items from other users
+        all_items = db.collection('items').where('active', '==', True).get()
+        all_items = [item.to_dict() for item in all_items]
+        
+        other_items = [item for item in all_items if item['user_id'] != st.session_state.user_id]
+        
+        if not other_items:
+            st.info("No items available to trade")
+            return
+        
+        # Create two columns for item selection
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write("**Your Item to Trade**")
+            user_item_id = st.selectbox(
+                "Select your item",
+                options=[item['id'] for item in user_items],
+                format_func=lambda x: next((item['name'] for item in user_items if item['id'] == x), x)
+            )
+        
+        with col2:
+            st.write("**Item You Want**")
+            target_item_id = st.selectbox(
+                "Select the item you want",
+                options=[item['id'] for item in other_items],
+                format_func=lambda x: next((item['name'] for item in other_items if item['id'] == x), x)
+            )
+        
+        # Show item details
+        st.write("**Item Details**")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            user_item = next((item for item in user_items if item['id'] == user_item_id), None)
+            if user_item:
+                st.write("**Your Item:**")
+                st.write(f"Name: {user_item['name']}")
+                st.write(f"Category: {user_item['category']}")
+                st.write(f"Condition: {user_item['condition']}")
+                st.write(f"Price: ${user_item['price']}")
+        
+        with col2:
+            target_item = next((item for item in other_items if item['id'] == target_item_id), None)
+            if target_item:
+                st.write("**Target Item:**")
+                st.write(f"Name: {target_item['name']}")
+                st.write(f"Category: {target_item['category']}")
+                st.write(f"Condition: {target_item['condition']}")
+                st.write(f"Price: ${target_item['price']}")
+        
+        # Trade match analysis
+        if user_item and target_item:
+            st.write("**Trade Match Analysis**")
+            price_difference = abs(user_item['price'] - target_item['price'])
+            price_match = "Good" if price_difference <= 20 else "Fair" if price_difference <= 50 else "Poor"
+                
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Price Difference", f"${price_difference}")
+            with col2:
+                st.metric("Price Match", price_match)
+            with col3:
+                st.metric("Category Match", "Same" if user_item['category'] == target_item['category'] else "Different")
+        
+        # Message to the other trader
+        st.write("**Message to the Trader**")
+        message = st.text_area(
+            "Explain why you think this is a good trade...",
+            placeholder="Hi! I'm interested in trading my [item] for your [item] because...",
+            height=150
+        )
+        
+        # Send proposal button
+        if st.button("Send Trade Proposal"):
+            if not message:
+                st.error("Please include a message explaining your trade proposal")
+            else:
+                try:
+                    # Create trade proposal in Firestore
+                    proposal_data = {
+                        'item_id': target_item['id'],
+                        'proposed_item_id': user_item_id,
+                        'proposer_id': st.session_state.user_id,
+                        'proposer_name': st.session_state.username,
+                        'proposed_item_name': user_item['name'],
+                        'proposed_item_category': user_item['category'],
+                        'proposed_item_condition': user_item['condition'],
+                        'proposed_item_price': user_item.get('price', 0),
+                        'item_name': target_item['name'],
+                        'item_owner_id': target_item['user_id'],
+                        'message': message,
+                        'status': 'pending',
+                        'created_at': datetime.now()
+                    }
+                    
+                    # Add to trade_proposals collection
+                    db.collection('trade_proposals').add(proposal_data)
+                    
+                    st.success("Trade proposal sent successfully!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error sending trade proposal: {str(e)}")
+                    print(f"Error sending trade proposal: {str(e)}")
+                    
+    except Exception as e:
+        st.error(f"Error loading items: {str(e)}")
+        print(f"Error loading items: {str(e)}")
 
 def propose_trade_page():
-    if 'trade_item' not in st.session_state:
-        st.error("No trade item selected")
+    if 'selected_item' not in st.session_state:
+        st.error("No item selected for trade")
+        st.session_state.active_tab = "Browse"
+        st.rerun()
         return
     
-    trade_item = st.session_state.trade_item
+    target_item = st.session_state.selected_item
     
     st.header("Propose a Trade")
     
     # Show the item we want
     st.subheader("You want to receive:")
-    create_item_card(trade_item, show_trade_btn=False)
+    create_item_card(target_item)
     
     st.divider()
     
@@ -716,102 +1102,127 @@ def propose_trade_page():
     st.subheader("Select what you'll offer:")
     
     # Get user's items from Firebase
-    result = get_user_items(st.session_state.user_id)
-    if not result['success']:
-        st.error(f"Error fetching your items: {result.get('error', 'Unknown error')}")
-        return
-    
-    my_items = result['items']
-    
-    if not my_items:
-        st.info("You don't have any items listed. Create a listing first!")
-        if st.button("Create Listing"):
-            st.session_state.active_tab = "Create Listing"
-            st.rerun()
-        return
-    
-    # Filter items that are available for trade
-    tradeable_items = [item for item in my_items if item.get('for_trade', False)]
-    
-    if not tradeable_items:
-        st.info("None of your items are marked as available for trade. Edit your listings to enable trading!")
-        if st.button("Edit Listings"):
-            st.session_state.active_tab = "My Listings"
-            st.rerun()
-        return
-    
-    selected_item = st.selectbox(
-        "Choose one of your items to trade",
-        options=[f"{item['name']} (${item.get('price', 0)})" for item in tradeable_items],
-        index=0
-    )
-    
-    selected_index = [f"{item['name']} (${item.get('price', 0)})" for item in tradeable_items].index(selected_item)
-    my_item = tradeable_items[selected_index]
-    
-    # Show trade comparison
-    st.subheader("Trade Analysis")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.write("**You Give:**")
-        st.write(f"Item: {my_item['name']}")
-        st.write(f"Value: ${my_item.get('price', 0)}")
-        st.write(f"Category: {my_item['category']}")
-    
-    with col2:
-        st.write("**You Receive:**")
-        st.write(f"Item: {trade_item['name']}")
-        st.write(f"Value: ${trade_item.get('price', 0)}")
-        st.write(f"Category: {trade_item['category']}")
-    
-    # Calculate trade fairness
-    my_price = my_item.get('price', 0)
-    their_price = trade_item.get('price', 0)
-    price_difference = abs(my_price - their_price)
-    price_ratio = min(my_price, their_price) / max(my_price, their_price) if max(my_price, their_price) > 0 else 0
-    
-    # Use Firebase's rate_trade_value function
-    trade_value_result = rate_trade_value(my_item, trade_item)
-    if trade_value_result['success']:
-        is_fair = trade_value_result.get('is_fair', False)
-        if is_fair:
+    try:
+        user_items = db.collection('items').where('user_id', '==', st.session_state.user_id).get()
+        user_items = [item.to_dict() for item in user_items]
+        
+        if not user_items:
+            st.info("You don't have any items listed. Create a listing first!")
+            if st.button("Create Listing"):
+                st.session_state.active_tab = "Create Listing"
+                st.rerun()
+            return
+        
+        # Filter items that are available for trade
+        tradeable_items = [item for item in user_items if item.get('for_trade', False)]
+        
+        if not tradeable_items:
+            st.info("None of your items are marked as available for trade. Edit your listings to enable trading!")
+            if st.button("Edit Listings"):
+                st.session_state.active_tab = "My Listings"
+                st.rerun()
+            return
+        
+        selected_item = st.selectbox(
+            "Choose one of your items to trade",
+            options=[f"{item['name']} (${item.get('price', 0)})" for item in tradeable_items],
+            index=0
+        )
+        
+        selected_index = [f"{item['name']} (${item.get('price', 0)})" for item in tradeable_items].index(selected_item)
+        my_item = tradeable_items[selected_index]
+        
+        # Show trade comparison
+        st.subheader("Trade Analysis")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write("**You Give:**")
+            st.write(f"Item: {my_item['name']}")
+            st.write(f"Value: ${my_item.get('price', 0)}")
+            st.write(f"Category: {my_item['category']}")
+        
+        with col2:
+            st.write("**You Receive:**")
+            st.write(f"Item: {target_item['name']}")
+            st.write(f"Value: ${target_item.get('price', 0)}")
+            st.write(f"Category: {target_item['category']}")
+        
+        # Calculate trade fairness
+        my_price = my_item.get('price', 0)
+        their_price = target_item.get('price', 0)
+        price_difference = abs(my_price - their_price)
+        price_ratio = min(my_price, their_price) / max(my_price, their_price) if max(my_price, their_price) > 0 else 0
+        
+        # Trade fairness analysis
+        if price_ratio >= 0.8:
             st.success("✅ This appears to be a fair trade!")
-        else:
+        elif price_ratio >= 0.6:
             st.warning("⚠️ This trade is somewhat uneven but might still be acceptable.")
-    else:
-        st.warning("⚠️ Unable to evaluate trade fairness automatically.")
-    
-    if price_difference > 0:
-        if my_price > their_price:
-            st.write(f"You're giving ${price_difference} more in value")
-            include_cash = st.checkbox(f"Request ${price_difference} to balance the trade")
         else:
-            st.write(f"You're receiving ${price_difference} more in value")
-            include_cash = st.checkbox(f"Include ${price_difference} to balance the trade")
-    
-    # Additional comments
-    message = st.text_area("Message to the other trader (optional)", 
-                          placeholder="Explain why you think this is a good trade...")
-    
-    # Submit proposal
-    if st.button("Send Trade Proposal", use_container_width=True):
-        # Here you would typically call a Firebase function to save the trade proposal
-        # For now, we'll just show a success message
-        st.success("🤝 Your trade proposal has been sent! You'll be notified when the other person responds.")
-        st.balloons()
-        st.session_state.active_tab = "Trade Proposals"
-        st.rerun()
-    
-    # Cancel
-    if st.button("Cancel", use_container_width=True):
-        st.session_state.active_tab = "Browse"
-        if 'trade_item' in st.session_state:
-            del st.session_state.trade_item
-        if 'my_item' in st.session_state:
-            del st.session_state.my_item
-        st.rerun()
+            st.error("❌ This trade might be significantly uneven.")
+        
+        if price_difference > 0:
+            if my_price > their_price:
+                st.write(f"You're giving ${price_difference} more in value")
+                include_cash = st.checkbox(f"Request ${price_difference} to balance the trade")
+            else:
+                st.write(f"You're receiving ${price_difference} more in value")
+                include_cash = st.checkbox(f"Include ${price_difference} to balance the trade")
+        
+        # Message to the other trader
+        st.subheader("Message to the Trader")
+        message = st.text_area(
+            "Explain why you think this is a good trade...",
+            placeholder="Hi! I'm interested in trading my [item] for your [item] because...",
+            height=150
+        )
+        
+        # Submit proposal
+        if st.button("Send Trade Proposal", use_container_width=True):
+            if not message:
+                st.error("Please include a message explaining your trade proposal")
+            else:
+                try:
+                    # Create trade proposal in Firestore
+                    proposal_data = {
+                        'item_id': target_item['id'],
+                        'proposed_item_id': my_item['id'],
+                        'proposer_id': st.session_state.user_id,
+                        'proposer_name': st.session_state.username,
+                        'proposed_item_name': my_item['name'],
+                        'proposed_item_category': my_item['category'],
+                        'proposed_item_condition': my_item['condition'],
+                        'proposed_item_price': my_item.get('price', 0),
+                        'item_name': target_item['name'],
+                        'item_owner_id': target_item['user_id'],
+                        'message': message,
+                        'status': 'pending',
+                        'created_at': datetime.now()
+                    }
+                    
+                    # Add to trade_proposals collection
+                    db.collection('trade_proposals').add(proposal_data)
+                    
+                    st.success("🤝 Your trade proposal has been sent! You'll be notified when the other person responds.")
+                    st.balloons()
+                    st.session_state.active_tab = "Trade Proposals"
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error sending trade proposal: {str(e)}")
+                    print(f"Error sending trade proposal: {str(e)}")
+        
+        # Cancel
+        if st.button("Cancel", use_container_width=True):
+            st.session_state.active_tab = "Browse"
+            if 'selected_item' in st.session_state:
+                del st.session_state.selected_item
+            st.rerun()
+            
+    except Exception as e:
+        st.error(f"Error loading your items: {str(e)}")
+        
 
 def cart_page():
     st.header("Shopping Cart")
@@ -985,7 +1396,10 @@ def edit_listing_page():
         if listing.get('images'):
             st.write("Current images:")
             for image_name in listing['images']:
-                st.image(image_name, use_container_width=True)
+                try:
+                    st.image("https://via.placeholder.com/150", width=200)
+                except Exception as e:
+                    st.error(f"Error loading image: {str(e)}")
         
         uploaded_files = st.file_uploader("Upload new images", type=['png', 'jpg', 'jpeg'], 
                                         accept_multiple_files=True)
@@ -1004,7 +1418,7 @@ def edit_listing_page():
                     'condition': condition,
                     'for_sale': for_sale,
                     'for_trade': for_trade,
-                    'updated_at': datetime.datetime.now()
+                    'updated_at': datetime.now()
                 }
                 
                 # Add optional fields if provided
@@ -1060,7 +1474,7 @@ def main():
     if st.session_state.active_tab == "Login":
         login_page()
     elif st.session_state.active_tab == "Browse":
-        browse_marketplace()
+        browse_page()
     elif st.session_state.active_tab == "Item Detail":
         item_detail_page()
     elif st.session_state.active_tab == "Create Listing":
