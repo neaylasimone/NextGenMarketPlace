@@ -222,7 +222,7 @@ def header():
     col1, col2, col3 = st.columns([3, 3, 2])
     
     with col1:
-        st.title("🔄 CommuniTrade")
+        st.title("NextGen Market")
         st.write("Buy • Sell • Barter • Build Community")
     
     with col3:
