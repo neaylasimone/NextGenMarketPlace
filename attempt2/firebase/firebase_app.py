@@ -4,33 +4,37 @@ import json
 import os
 import pyrebase
 import datetime
-#import auth_service
-#import user_service
-#import item_service
-#import search_service
+import firebase_admin
+from firebase_admin import credentials, firestore, auth
+from .firebase_config import firebase_config
 
-# Configure Streamlit page
-st.set_page_config(
-    page_title="Trading App",
-    page_icon="🔄",
-    layout="wide"
-)
+# Initialize Firebase Admin SDK
+try:
+    cred_path = os.path.join(os.path.dirname(__file__), "nextgenmarketplace-3c041-firebase-adminsdk-fbsvc-a51be76f07.json")
+    if os.path.exists(cred_path):
+        cred = credentials.Certificate(cred_path)
+        firebase_admin.initialize_app(cred)
+        db = firestore.client()
+    else:
+        st.error("Firebase Admin SDK credentials file not found. Please add the credentials file to the firebase directory.")
+        db = None
+except Exception as e:
+    st.error(f"Error initializing Firebase Admin SDK: {str(e)}")
+    db = None
 
-# Firebase config for client-side auth (different from admin SDK)
-firebase_config = {
-    "apiKey": "AIzaSyCOaOWgmWZACwroiwMk8PgZ3FkouTFf7zs",
-    "authDomain": "nextgenmarketplace-3c041.firebaseapp.com",
-    "projectId": "nextgenmarketplace-3c041",
-    "storageBucket": "nextgenmarketplace-3c041.firebasestorage.app",
-    "messagingSenderId": "647637034752",
-    "appId": "1:647637034752:web:d188f7820264ad6a10b5e5",
-    "measurementId": "G-XKD3BYRLJM"
-}
+# Initialize Firebase for client-side auth
+try:
+    firebase = pyrebase.initialize_app(firebase_config)
+    auth_client = firebase.auth()
+except Exception as e:
+    st.error(f"Error initializing Firebase client: {str(e)}")
+    auth_client = None
 
-# Initialize Firebase for client side (authentication)
-'''
-firebase = pyrebase.initialize_app(firebase_config)
-auth = firebase.auth()
+# Import services after Firebase initialization
+from . import auth_service
+from . import user_service
+from . import item_service
+from . import search_service
 
 # Initialize session state for user auth
 if 'user_id' not in st.session_state:
@@ -39,11 +43,11 @@ if 'user_email' not in st.session_state:
     st.session_state.user_email = None
 if 'username' not in st.session_state:
     st.session_state.username = None
-'''
+
 # Login/Register functions
 def login(email, password):
     try:
-        user = auth.sign_in_with_email_and_password(email, password)
+        user = auth_client.sign_in_with_email_and_password(email, password)
         user_result = auth_service.get_user_by_email(email)
         if user_result['success']:
             st.session_state.user_id = user_result['user'].uid
@@ -397,4 +401,31 @@ def matches_page():
                         st.write(f"**Description:** {wishlist_item.get('description', 'No description')}")
                         
                         st.write("### Matched Item:")
-                        col1, col2
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if 'images' in matched_item and matched_item['images']:
+                                st.image(matched_item['images'][0], width=150)
+                            else:
+                                st.image("https://via.placeholder.com/150", width=150)
+                        with col2:
+                            st.write(f"**Description:** {matched_item['description']}")
+                            
+                            if matched_item.get('for_sale', False):
+                                st.write(f"**Price:** ${matched_item['price']}")
+                            
+                            if matched_item.get('for_trade', False):
+                                st.write("**Looking to trade for:**")
+                                for trade_item in matched_item.get('looking_for', []):
+                                    st.write(f"- {trade_item}")
+                            
+                            # Get the owner username
+                            owner = auth_service.get_user(matched_item['user_id'])
+                            if owner['success']:
+                                st.write(f"**Listed by:** {owner['user'].display_name}")
+
+def initialize_firebase():
+    """Initialize Firebase and return the auth client"""
+    if auth_client is None:
+        st.error("Firebase client not initialized. Please check your Firebase configuration.")
+        return None
+    return auth_client

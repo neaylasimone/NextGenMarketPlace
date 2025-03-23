@@ -1,8 +1,10 @@
 # search_service.py - Search and item discovery functionality
-from firebase_config import db
-from user_service import get_user_profile
-from gemini import generate_content
+from .firebase_app import db
+from .user_service import get_user_profile
+from .gemini import generate_content
 import json
+import datetime
+from typing import Dict, List, Optional
 
 def search_items(search_query):
     """
@@ -365,3 +367,58 @@ def find_item_matches(listed_items, wishlist):
                 break
     
     return matches
+
+def rate_trade_value(item1_id: str, item2_id: str) -> Dict:
+    """
+    Rate the fairness of a trade between two items
+    
+    Args:
+        item1_id (str): ID of the first item
+        item2_id (str): ID of the second item
+        
+    Returns:
+        Dict: Trade rating information
+    """
+    try:
+        if db is None:
+            return {'success': False, 'error': 'Database not initialized'}
+            
+        # Get both items
+        item1_doc = db.collection('items').document(item1_id).get()
+        item2_doc = db.collection('items').document(item2_id).get()
+        
+        if not item1_doc.exists or not item2_doc.exists:
+            return {'success': False, 'error': 'One or both items not found'}
+            
+        item1 = item1_doc.to_dict()
+        item2 = item2_doc.to_dict()
+        
+        # Get prices
+        price1 = item1.get('price', 0)
+        price2 = item2.get('price', 0)
+        
+        # Calculate price difference percentage
+        if price1 == 0 or price2 == 0:
+            return {'success': False, 'error': 'One or both items have no price'}
+            
+        price_diff = abs(price1 - price2)
+        price_diff_percent = (price_diff / max(price1, price2)) * 100
+        
+        # Determine trade rating
+        if price_diff_percent <= 10:
+            rating = "Fair"
+        elif price_diff_percent <= 25:
+            rating = "Slightly Unfair"
+        else:
+            rating = "Unfair"
+            
+        return {
+            'success': True,
+            'rating': rating,
+            'price_difference': price_diff,
+            'price_difference_percent': price_diff_percent,
+            'item1_price': price1,
+            'item2_price': price2
+        }
+    except Exception as e:
+        return {'success': False, 'error': str(e)}

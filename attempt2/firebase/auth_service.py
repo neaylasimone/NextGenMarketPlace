@@ -1,10 +1,11 @@
 # auth_service.py - Authentication related functions
+import streamlit as st
+from .firebase_config import db
 import firebase_admin
 from firebase_admin import auth
 import datetime
 import re
 from typing import Dict, Optional
-from firebase_config import db
 
 def validate_email(email: str) -> bool:
     """Validate email format"""
@@ -56,6 +57,9 @@ def register_user(email: str, password: str, username: str) -> Dict:
         dict: Result with success status and user data or error
     """
     try:
+        if db is None:
+            return {'success': False, 'error': 'Database not initialized'}
+            
         # Validate inputs
         if not validate_email(email):
             return {'success': False, 'error': 'Invalid email format'}
@@ -79,15 +83,14 @@ def register_user(email: str, password: str, username: str) -> Dict:
         )
         
         # Create user profile in Firestore
-        db.collection('users').document(user.uid).set({
+        user_data = {
             'email': email,
             'username': username,
             'created_at': datetime.datetime.now(),
-            'last_login': None,
-            'listed_items': [],
-            'wishlist': [],
-            'is_active': True
-        })
+            'wishlist': []
+        }
+        
+        db.collection('users').document(user.uid).set(user_data)
         
         return {'success': True, 'user': user}
     except Exception as e:
@@ -105,6 +108,9 @@ def update_user_profile(user_id: str, updates: Dict) -> Dict:
         dict: Result with success status or error
     """
     try:
+        if db is None:
+            return {'success': False, 'error': 'Database not initialized'}
+            
         # Validate user exists
         user = auth.get_user(user_id)
         
@@ -132,6 +138,9 @@ def get_user_by_email(email: str) -> Dict:
         dict: Result with success status and user data or error
     """
     try:
+        if db is None:
+            return {'success': False, 'error': 'Database not initialized'}
+            
         if not validate_email(email):
             return {'success': False, 'error': 'Invalid email format'}
             
@@ -151,6 +160,9 @@ def get_user(user_id: str) -> Dict:
         dict: Result with success status and user data or error
     """
     try:
+        if db is None:
+            return {'success': False, 'error': 'Database not initialized'}
+            
         user = auth.get_user(user_id)
         return {'success': True, 'user': user}
     except Exception as e:
@@ -167,6 +179,9 @@ def delete_user(user_id: str) -> Dict:
         dict: Result with success status or error
     """
     try:
+        if db is None:
+            return {'success': False, 'error': 'Database not initialized'}
+            
         # Delete user from Firebase Auth
         auth.delete_user(user_id)
         
@@ -188,6 +203,9 @@ def verify_id_token(id_token: str) -> Dict:
         dict: Result with success status and token data or error
     """
     try:
+        if db is None:
+            return {'success': False, 'error': 'Database not initialized'}
+            
         decoded_token = auth.verify_id_token(id_token)
         return {'success': True, 'token': decoded_token}
     except Exception as e:
@@ -204,6 +222,9 @@ def reset_password(email: str) -> Dict:
         dict: Result with success status or error
     """
     try:
+        if db is None:
+            return {'success': False, 'error': 'Database not initialized'}
+            
         if not validate_email(email):
             return {'success': False, 'error': 'Invalid email format'}
             
@@ -229,10 +250,51 @@ def update_password(user_id: str, new_password: str) -> Dict:
         dict: Result with success status or error
     """
     try:
+        if db is None:
+            return {'success': False, 'error': 'Database not initialized'}
+            
         if not validate_password(new_password):
             return {'success': False, 'error': 'Password does not meet security requirements'}
             
         auth.update_user(user_id, password=new_password)
         return {'success': True}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+def login_user(email, password):
+    """Login a user"""
+    try:
+        if db is None:
+            return {'success': False, 'error': 'Database not initialized'}
+            
+        # Get user from Firebase Auth
+        user = auth.get_user_by_email(email)
+        
+        # Get user profile from Firestore
+        user_doc = db.collection('users').document(user.uid).get()
+        if not user_doc.exists:
+            return {'success': False, 'error': 'User profile not found'}
+            
+        user_data = user_doc.to_dict()
+        
+        return {
+            'success': True,
+            'user_id': user.uid,
+            'username': user_data.get('username', '')
+        }
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+def get_user_profile(user_id):
+    """Get user profile data"""
+    try:
+        if db is None:
+            return {'success': False, 'error': 'Database not initialized'}
+            
+        user_doc = db.collection('users').document(user_id).get()
+        if not user_doc.exists:
+            return {'success': False, 'error': 'User profile not found'}
+            
+        return {'success': True, 'data': user_doc.to_dict()}
     except Exception as e:
         return {'success': False, 'error': str(e)}

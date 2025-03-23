@@ -1,8 +1,9 @@
-# user_service.py - User profile management
-from firebase_config import db
+# user_service.py - User profile and wishlist management
+from .firebase_config import db
 import firebase_admin
 from firebase_admin import firestore
 import datetime
+from typing import Dict, List, Optional
 
 def get_user_profile(user_id):
     """
