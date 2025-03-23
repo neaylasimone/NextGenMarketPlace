@@ -108,37 +108,20 @@ class MockDB:
 
 db = MockDB()
 
-# Session state initialization
-if 'user_id' not in st.session_state:
-    st.session_state.user_id = str(uuid.uuid4())
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-if 'username' not in st.session_state:
-    st.session_state.username = ""
-if 'active_tab' not in st.session_state:
-    st.session_state.active_tab = "Browse"
-if 'cart_items' not in st.session_state:
-    st.session_state.cart_items = []
-if 'search_query' not in st.session_state:
-    st.session_state.search_query = ""
-
 # Utility functions
 def get_trade_value(item_description, category, condition, images=None):
     """AI-powered function to estimate the value of an item"""
-    # In a real app, this would use an ML model or API
-    # For demo, we'll use a simple calculation based on random values and text analysis
-    
-    # Base value by category (just for demo)
+    # Base value by category (static values)
     category_values = {
-        "Electronics": (50, 500),
-        "Clothing": (10, 100),
-        "Home Goods": (20, 200),
-        "Tools": (15, 150),
-        "Toys & Games": (5, 80),
-        "Books": (3, 30),
-        "Handmade": (10, 150),
-        "Services": (20, 100),
-        "Other": (5, 50)
+        "Electronics": 275,  # Midpoint of previous range (50, 500)
+        "Clothing": 55,     # Midpoint of previous range (10, 100)
+        "Home Goods": 110,  # Midpoint of previous range (20, 200)
+        "Tools": 82,        # Midpoint of previous range (15, 150)
+        "Toys & Games": 42, # Midpoint of previous range (5, 80)
+        "Books": 16,        # Midpoint of previous range (3, 30)
+        "Handmade": 80,     # Midpoint of previous range (10, 150)
+        "Services": 60,     # Midpoint of previous range (20, 100)
+        "Other": 27         # Midpoint of previous range (5, 50)
     }
     
     # Condition multiplier
@@ -150,19 +133,19 @@ def get_trade_value(item_description, category, condition, images=None):
         "Poor": 0.3
     }
     
-    # Get base range and apply condition
-    min_val, max_val = category_values.get(category, (5, 100))
+    # Get base value and apply condition
+    base_value = category_values.get(category, 50)  # Default to 50 if category not found
     multiplier = condition_multiplier.get(condition, 0.5)
     
-    # Text analysis would affect the range within min and max
+    # Text analysis would affect the value
     # More detailed descriptions typically indicate higher value items
     description_factor = min(1.0, len(item_description) / 200)
     
     # Calculate final value
-    base_value = random.uniform(min_val, max_val) * multiplier * (0.8 + 0.4 * description_factor)
+    final_value = base_value * multiplier * (0.8 + 0.4 * description_factor)
     
-    # For demo purposes, round to whole dollar amount
-    return round(base_value)
+    # Round to whole dollar amount
+    return round(final_value)
 
 def suggest_trades(item_id, user_id):
     """Find potential trade matches based on item value and category"""
@@ -217,7 +200,7 @@ def create_item_card(item, is_detail=False, show_trade_btn=True):
     
     with col1:
         image_url = item.get('image_url', "https://via.placeholder.com/150")
-        st.image(image_url, use_column_width=True)
+        st.image(image_url, use_container_width=True)
     
     with col2:
         st.markdown(f"<h3 style='color: #1E88E5; margin-bottom: 0.5rem;'>{item['title']}</h3>", unsafe_allow_html=True)
@@ -340,7 +323,6 @@ def header():
     
     with col1:
         st.markdown('<div style="display: flex; align-items: center; gap: 1rem;">', unsafe_allow_html=True)
-        st.image("assets/nextgen_icon.png", width=50)
         st.markdown("""
             <h1 style='color: #1E88E5; margin: 0;'>Next Gen Marketplace</h1>
             <p style='color: #666; font-size: 1.1em; margin-top: 0.5rem;'>Buy • Sell • Barter • Build Community</p>
@@ -382,17 +364,6 @@ def sidebar():
                 st.session_state.active_tab = "Login"
                 st.session_state.redirect_after_login = "Trade Proposals"
             st.rerun()
-            
-        st.divider()
-        st.write("### Filter by Category")
-        categories = ["All", "Electronics", "Clothing", "Home Goods", "Tools", 
-                     "Toys & Games", "Books", "Handmade", "Services", "Other"]
-        
-        for category in categories:
-            if st.button(category, key=f"cat_{category}", use_container_width=True):
-                st.session_state.active_tab = "Browse"
-                st.session_state.selected_category = category
-                st.rerun()
 
 def login_page():
     st.header("Login / Register")
@@ -491,7 +462,7 @@ def browse_marketplace():
             'username': 'CraftLover',
             'created_at': '2025-03-19',
             'trade_value': 50,
-            'image_url': 'https://images.unsplash.com/photo-1596360629200-740a8a92d5c4?ixlib=rb-1.2.1&auto=format&fit=crop&w=1050&q=80'
+            'image_url': 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQgkPGhvGnQOvirxJap-D-Ahg7FO6uCovlI-Q&s'
         },
         {
             'id': 'item_3',
@@ -645,35 +616,67 @@ def item_detail_page():
 def create_listing_page():
     st.header("Create New Listing")
     
-    # Form inputs
-    title = st.text_input("Title", placeholder="Enter a descriptive title")
+    # Check if we're editing an existing listing
+    editing = 'item_to_edit' in st.session_state
+    
+    if editing:
+        item = st.session_state.item_to_edit
+        st.subheader("Edit Listing")
+    else:
+        item = {
+            'title': "",
+            'category': "Electronics",
+            'condition': "New",
+            'description': "",
+            'price': 0,
+            'barter_available': True,
+            'image_url': "https://via.placeholder.com/150"
+        }
+        
+    # Form inputs with pre-filled values if editing
+    title = st.text_input("Title", 
+                         value=item['title'],
+                         placeholder="Enter a descriptive title")
     
     col1, col2 = st.columns(2)
     with col1:
         category = st.selectbox(
             "Category",
             ["Electronics", "Clothing", "Home Goods", "Tools", 
-             "Toys & Games", "Books", "Handmade", "Services", "Other"]
+             "Toys & Games", "Books", "Handmade", "Services", "Other"],
+            index=["Electronics", "Clothing", "Home Goods", "Tools", 
+                  "Toys & Games", "Books", "Handmade", "Services", "Other"].index(item['category'])
         )
     with col2:
         condition = st.selectbox(
             "Condition",
-            ["New", "Like New", "Good", "Fair", "Poor"]
+            ["New", "Like New", "Good", "Fair", "Poor"],
+            index=["New", "Like New", "Good", "Fair", "Poor"].index(item['condition'])
         )
     
-    description = st.text_area("Description", placeholder="Provide details about your item", height=150)
+    description = st.text_area("Description", 
+                             value=item['description'],
+                             placeholder="Provide details about your item", 
+                             height=150)
     
     # Listing Type Selection with improved UI
     st.markdown("### Listing Type")
     listing_type_col1, listing_type_col2 = st.columns(2)
     
+    price = None
     with listing_type_col1:
-        for_sale = st.checkbox("Available for Sale", value=True)
+        for_sale = st.checkbox("Available for Sale", 
+                             value=True if not editing else item['price'] > 0)
         if for_sale:
-            price = st.number_input("Sale Price ($)", min_value=1, step=1)
+            price = st.number_input("Sale Price ($)", 
+                                  value=float(item['price']) if editing and item['price'] > 0 else 1.0,
+                                  min_value=1.0, 
+                                  step=1.0)
     
+    trade_value = None
     with listing_type_col2:
-        barter_available = st.checkbox("Available for Trade/Barter", value=True)
+        barter_available = st.checkbox("Available for Trade/Barter", 
+                                     value=item.get('barter_available', True))
         if barter_available:
             st.info("Trade value will be calculated based on item details")
             if st.button("Calculate Trade Value"):
@@ -684,10 +687,13 @@ def create_listing_page():
     if not for_sale and not barter_available:
         st.error("Please select at least one option: For Sale or For Trade")
     
-    uploaded_files = st.file_uploader("Upload Images (Max 5)", accept_multiple_files=True, type=["jpg", "jpeg", "png"])
+    uploaded_files = st.file_uploader("Upload Images (Max 5)", 
+                                    accept_multiple_files=True, 
+                                    type=["jpg", "jpeg", "png"])
     
-    # Create listing button
-    if st.button("Create Listing", use_container_width=True, type="primary"):
+    # Create/Update listing button
+    button_text = "Update Listing" if editing else "Create Listing"
+    if st.button(button_text, use_container_width=True, type="primary"):
         if not title or not description:
             st.error("Please fill in all required fields")
         elif not for_sale and not barter_available:
@@ -695,8 +701,43 @@ def create_listing_page():
         elif for_sale and not price:
             st.error("Please set a sale price")
         else:
-            st.success("🎉 Your listing has been created successfully!")
+            # Prepare listing data
+            listing_data = {
+                'id': item.get('id', str(uuid.uuid4())),
+                'title': title,
+                'description': description,
+                'category': category,
+                'condition': condition,
+                'price': price if for_sale else 0,
+                'barter_available': barter_available,
+                'user_id': st.session_state.user_id,
+                'username': st.session_state.username,
+                'created_at': item.get('created_at', datetime.now().strftime('%Y-%m-%d')),
+                'trade_value': trade_value or get_trade_value(description, category, condition),
+                'image_url': item['image_url']
+            }
+            
+            if editing:
+                # Update existing listing
+                for i, listing in enumerate(st.session_state.user_listings):
+                    if listing['id'] == item['id']:
+                        st.session_state.user_listings[i] = listing_data
+                        break
+                del st.session_state.item_to_edit
+                st.success("🎉 Your listing has been updated successfully!")
+            else:
+                # Add new listing
+                st.session_state.user_listings.append(listing_data)
+                st.success("🎉 Your listing has been created successfully!")
+            
             st.balloons()
+            st.session_state.active_tab = "My Listings"
+            st.rerun()
+    
+    # Add cancel button when editing
+    if editing:
+        if st.button("Cancel Editing", use_container_width=True):
+            del st.session_state.item_to_edit
             st.session_state.active_tab = "My Listings"
             st.rerun()
 
@@ -707,49 +748,68 @@ def my_listings_page():
     tab1, tab2 = st.tabs(["Active Listings", "Sold/Completed"])
     
     with tab1:
-        # In real app, fetch from Firebase
-        # For demo, create mock data
-        my_items = []
-        for i in range(3):
-            category = random.choice(["Electronics", "Clothing", "Home Goods"])
-            condition = random.choice(["New", "Like New", "Good"])
-            price = random.randint(20, 300)
-            
-            item = {
-                'id': f"my_item_{i}",
-                'title': f"My Item {i+1}",
-                'description': f"This is the description for my item {i+1}. I'm selling it because I don't need it anymore.",
-                'price': price,
-                'category': category,
-                'condition': condition,
-                'barter_available': True,
-                'user_id': st.session_state.user_id,
-                'username': st.session_state.username,
-                'created_at': '2025-03-18',
-                'trade_value': get_trade_value("Sample description", category, condition)
-            }
-            my_items.append(item)
-        
-        if not my_items:
+        if not st.session_state.user_listings:
             st.info("You haven't created any listings yet.")
+            if st.button("Create Your First Listing"):
+                st.session_state.active_tab = "Create Listing"
+                st.rerun()
         else:
-            for item in my_items:
+            for item in st.session_state.user_listings:
                 st.divider()
                 create_item_card(item, show_trade_btn=False)
                 
                 col1, col2, col3 = st.columns(3)
                 with col1:
                     if st.button("Edit", key=f"edit_{item['id']}"):
-                        st.write("Edit functionality would go here")
+                        st.session_state.item_to_edit = item
+                        st.session_state.active_tab = "Create Listing"
+                        st.rerun()
                 with col2:
                     if st.button("Mark as Sold", key=f"sold_{item['id']}"):
-                        st.write("Mark as sold functionality would go here")
+                        # Move item to completed listings
+                        item['status'] = 'sold'
+                        item['sold_date'] = datetime.now().strftime('%Y-%m-%d')
+                        if 'completed_listings' not in st.session_state:
+                            st.session_state.completed_listings = []
+                        st.session_state.completed_listings.append(item)
+                        st.session_state.user_listings.remove(item)
+                        st.success("Item marked as sold!")
+                        st.rerun()
                 with col3:
                     if st.button("Delete", key=f"delete_{item['id']}"):
-                        st.write("Delete functionality would go here")
+                        st.session_state.user_listings.remove(item)
+                        st.success("Listing deleted successfully!")
+                        st.rerun()
     
     with tab2:
-        st.info("No completed transactions.")
+        if not st.session_state.completed_listings:
+            st.info("No completed transactions.")
+        else:
+            for item in st.session_state.completed_listings:
+                st.divider()
+                create_item_card(item, show_trade_btn=False)
+                st.write(f"**Sold on:** {item.get('sold_date', 'Unknown date')}")
+                
+                # Option to relist
+                if st.button("Relist Item", key=f"relist_{item['id']}"):
+                    # Remove sold status and date
+                    item.pop('status', None)
+                    item.pop('sold_date', None)
+                    # Move back to active listings
+                    st.session_state.user_listings.append(item)
+                    st.session_state.completed_listings.remove(item)
+                    st.success("Item relisted successfully!")
+                    st.rerun()
+
+def display_trade_item(item, is_offer=True):
+    """Simplified item display for trade proposals"""
+    st.markdown(f"### {'You Offered:' if is_offer else 'In Exchange For:'}")
+    st.markdown(f"**{item['title']}**")
+    st.markdown(f"*{item['description']}*")
+    st.markdown(f"💰 Price: ${item['price']}")
+    st.markdown(f"📊 Trade Value: ${item.get('trade_value', item['price'])}")
+    st.markdown(f"🏷️ Category: {item['category']}")
+    st.markdown(f"📦 Condition: {item['condition']}")
 
 def trade_proposals_page():
     st.header("Trade Proposals")
@@ -758,10 +818,64 @@ def trade_proposals_page():
     tab1, tab2 = st.tabs(["Received Proposals", "Sent Proposals"])
     
     with tab1:
-        st.info("You have no incoming trade proposals.")
+        if not st.session_state.received_trade_proposals:
+            st.info("You have no incoming trade proposals.")
+        else:
+            for proposal in st.session_state.received_trade_proposals:
+                with st.expander(f"Trade proposal from {proposal['from_user']}"):
+                    # Display items side by side
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        display_trade_item(proposal['offered_item'], is_offer=True)
+                    with col2:
+                        display_trade_item(proposal['requested_item'], is_offer=False)
+                    
+                    # Display additional info
+                    if proposal.get('cash_adjustment'):
+                        st.info(f"💰 Cash adjustment: ${proposal['cash_adjustment']}")
+                    
+                    if proposal.get('message'):
+                        st.write("**Message:**", proposal['message'])
+                    
+                    # Action buttons
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("Accept Trade", key=f"accept_{proposal['id']}"):
+                            st.success("Trade accepted! The other user will be notified.")
+                            st.rerun()
+                    with col2:
+                        if st.button("Decline Trade", key=f"decline_{proposal['id']}"):
+                            st.session_state.received_trade_proposals.remove(proposal)
+                            st.info("Trade proposal declined.")
+                            st.rerun()
     
     with tab2:
-        st.info("You have no outgoing trade proposals.")
+        if not st.session_state.sent_trade_proposals:
+            st.info("You have no outgoing trade proposals.")
+        else:
+            for proposal in st.session_state.sent_trade_proposals:
+                with st.expander(f"Trade proposal to {proposal['to_user']}"):
+                    # Display items side by side
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        display_trade_item(proposal['offered_item'], is_offer=True)
+                    with col2:
+                        display_trade_item(proposal['requested_item'], is_offer=False)
+                    
+                    # Display additional info
+                    if proposal.get('cash_adjustment'):
+                        st.info(f"💰 Cash adjustment: ${proposal['cash_adjustment']}")
+                    
+                    if proposal.get('message'):
+                        st.write("**Message:**", proposal['message'])
+                    
+                    st.write("**Status:**", proposal['status'])
+                    
+                    # Cancel button
+                    if st.button("Cancel Proposal", key=f"cancel_{proposal['id']}"):
+                        st.session_state.sent_trade_proposals.remove(proposal)
+                        st.info("Trade proposal cancelled.")
+                        st.rerun()
 
 def propose_trade_page():
     if 'trade_item' not in st.session_state:
@@ -781,29 +895,8 @@ def propose_trade_page():
     # Select what to offer
     st.subheader("Select what you'll offer:")
     
-    # In real app, fetch user's items from Firebase
-    # For demo, create mock data
-    my_items = []
-    for i in range(3):
-        category = random.choice(["Electronics", "Clothing", "Home Goods"])
-        condition = random.choice(["New", "Like New", "Good"])
-        price = random.randint(20, 300)
-        
-        item = {
-            'id': f"my_item_{i}",
-            'title': f"My Item {i+1}",
-            'description': f"This is the description for my item {i+1}.",
-            'price': price,
-            'category': category,
-            'condition': condition,
-            'barter_available': True,
-            'user_id': st.session_state.user_id,
-            'username': st.session_state.username or "Me",
-            'created_at': '2025-03-18',
-            'trade_value': get_trade_value("Sample description", category, condition),
-            'image_url': "https://via.placeholder.com/150"  # Add placeholder image
-        }
-        my_items.append(item)
+    # Use persisted mock data from session state
+    my_items = st.session_state.my_trade_items
     
     selected_item = st.selectbox(
         "Choose one of your items to trade",
@@ -843,15 +936,20 @@ def propose_trade_page():
     else:
         st.error("⛔ This trade is significantly uneven and may be rejected.")
     
+    cash_adjustment = None
     if price_difference > 0:
         if my_item['price'] > trade_item['price']:
             st.write(f"You're giving ${price_difference} more in value")
             # Offer to add cash to make it fair
             include_cash = st.checkbox(f"Request ${price_difference} to balance the trade")
+            if include_cash:
+                cash_adjustment = price_difference
         else:
             st.write(f"You're receiving ${price_difference} more in value")
             # Offer to add cash to make it fair
             include_cash = st.checkbox(f"Include ${price_difference} to balance the trade")
+            if include_cash:
+                cash_adjustment = -price_difference
     
     # Additional comments
     message = st.text_area("Message to the other trader (optional)", 
@@ -861,6 +959,22 @@ def propose_trade_page():
     
     # Submit proposal
     if st.button("Send Trade Proposal", use_container_width=True):
+        # Create new trade proposal
+        new_proposal = {
+            'id': str(uuid.uuid4()),
+            'from_user': st.session_state.username or "Anonymous",
+            'to_user': trade_item['username'],
+            'offered_item': my_item,
+            'requested_item': trade_item,
+            'cash_adjustment': cash_adjustment,
+            'message': message,
+            'status': 'Pending',
+            'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+        # Add to sent proposals
+        st.session_state.sent_trade_proposals.append(new_proposal)
+        
         st.success("🤝 Your trade proposal has been sent! You'll be notified when the other person responds.")
         st.balloons()
         st.session_state.active_tab = "Trade Proposals"
@@ -949,6 +1063,113 @@ def profile_page():
 
 # Main App Logic
 def main():
+    # Session state initialization
+    if 'user_id' not in st.session_state:
+        st.session_state.user_id = str(uuid.uuid4())
+    if 'logged_in' not in st.session_state:
+        st.session_state.logged_in = False
+    if 'username' not in st.session_state:
+        st.session_state.username = ""
+    if 'active_tab' not in st.session_state:
+        st.session_state.active_tab = "Browse"
+    if 'cart_items' not in st.session_state:
+        st.session_state.cart_items = []
+    if 'search_query' not in st.session_state:
+        st.session_state.search_query = ""
+    if 'sent_trade_proposals' not in st.session_state:
+        # Initialize with a mock sent proposal
+        mock_sent_proposal = {
+            'id': str(uuid.uuid4()),
+            'from_user': st.session_state.username or "You",
+            'to_user': "VintageFinder",
+            'offered_item': {
+                'id': 'my_offer_1',
+                'title': 'Gaming Laptop',
+                'description': 'High-end gaming laptop with RTX 3070, perfect for modern games.',
+                'price': 800,
+                'category': 'Electronics',
+                'condition': 'Like New',
+                'trade_value': 850,
+                'image_url': 'https://images.unsplash.com/photo-1603302576837-37561b2e2302?ixlib=rb-1.2.1&auto=format&fit=crop&w=1050&q=80'
+            },
+            'requested_item': {
+                'id': 'item_3',
+                'title': 'Vintage Leather Jacket - Size M',
+                'description': 'Genuine leather jacket in classic brown. Some natural wear adds character.',
+                'price': 120,
+                'category': 'Clothing',
+                'condition': 'Good',
+                'trade_value': 150,
+                'image_url': 'https://images.unsplash.com/photo-1551028719-00167b16eac5?ixlib=rb-1.2.1&auto=format&fit=crop&w=1050&q=80'
+            },
+            'cash_adjustment': -680,
+            'message': "I love this jacket! I can add cash to make up for the price difference.",
+            'status': 'Pending',
+            'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        st.session_state.sent_trade_proposals = [mock_sent_proposal]
+
+    if 'received_trade_proposals' not in st.session_state:
+        # Initialize with a mock received proposal
+        mock_received_proposal = {
+            'id': str(uuid.uuid4()),
+            'from_user': "CraftLover",
+            'to_user': st.session_state.username or "You",
+            'offered_item': {
+                'id': 'item_2',
+                'title': 'Handcrafted Boho Dreamcatcher',
+                'description': 'Beautiful handmade dreamcatcher with natural feathers and wooden beads.',
+                'price': 45,
+                'category': 'Handmade',
+                'condition': 'New',
+                'trade_value': 50,
+                'image_url': 'https://images.unsplash.com/photo-1531491673595-4ca5c2f22108?ixlib=rb-1.2.1&auto=format&fit=crop&w=1050&q=80'
+            },
+            'requested_item': {
+                'id': 'my_item_1',
+                'title': 'Vintage Camera',
+                'description': 'Classic film camera in working condition. Perfect for photography enthusiasts.',
+                'price': 65,
+                'category': 'Electronics',
+                'condition': 'Good',
+                'trade_value': 75,
+                'image_url': 'https://images.unsplash.com/photo-1452780212940-6f5c0d14d848?ixlib=rb-1.2.1&auto=format&fit=crop&w=1050&q=80'
+            },
+            'cash_adjustment': 20,
+            'message': "I love vintage cameras! I can add $20 to make the trade fair.",
+            'status': 'Pending',
+            'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        st.session_state.received_trade_proposals = [mock_received_proposal]
+
+    if 'user_listings' not in st.session_state:
+        st.session_state.user_listings = []
+    if 'completed_listings' not in st.session_state:
+        st.session_state.completed_listings = []
+    if 'my_trade_items' not in st.session_state:
+        # Initialize mock items once
+        st.session_state.my_trade_items = []
+        for i in range(3):
+            category = random.choice(["Electronics", "Clothing", "Home Goods"])
+            condition = random.choice(["New", "Like New", "Good"])
+            price = random.randint(20, 300)
+            
+            item = {
+                'id': f"my_item_{i}",
+                'title': f"My Item {i+1}",
+                'description': f"This is the description for my item {i+1}.",
+                'price': price,
+                'category': category,
+                'condition': condition,
+                'barter_available': True,
+                'user_id': st.session_state.user_id,
+                'username': "Me",
+                'created_at': '2025-03-18',
+                'trade_value': get_trade_value("Sample description", category, condition),
+                'image_url': "https://via.placeholder.com/150"
+            }
+            st.session_state.my_trade_items.append(item)
+    
     top_nav()
     header()
     sidebar()
