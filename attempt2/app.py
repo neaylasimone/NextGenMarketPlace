@@ -904,10 +904,195 @@ def cart_page():
         st.write(f"**Total: ${total}**")
         
         if st.button("Proceed to Checkout", use_container_width=True):
-            st.success("🎉 Order placed successfully!")
-            st.balloons()
-            st.session_state.cart_items = []
+            st.session_state.active_tab = "Checkout"
             st.rerun()
+
+def checkout_page():
+    st.header("Checkout")
+    
+    if not st.session_state.cart_items:
+        st.info("Your cart is empty")
+        if st.button("Browse Marketplace", use_container_width=False):
+            st.session_state.active_tab = "Browse"
+            st.rerun()
+        return
+
+    # Initialize checkout step in session state if not exists
+    if 'checkout_step' not in st.session_state:
+        st.session_state.checkout_step = 1
+    
+    # Calculate total
+    total = sum(item['price'] for item in st.session_state.cart_items)
+    shipping_cost = 0
+
+    # Custom CSS for better input and button sizing
+    st.markdown("""
+        <style>
+        /* Input field width */
+        .stTextInput input {
+            width: 100%;
+            max-width: 400px;
+        }
+        
+        /* Smaller width for email and phone inputs */
+        [data-testid="stTextInput"] input[type="text"][aria-label*="Email"],
+        [data-testid="stTextInput"] input[type="text"][aria-label*="Phone"] {
+            max-width: 300px;
+        }
+        
+        /* Button sizing */
+        .stButton button {
+            width: auto;
+            min-width: 150px;
+            max-width: 300px;
+            padding: 0.5rem 1rem;
+        }
+        
+        /* Radio button spacing */
+        .stRadio > div {
+            margin-bottom: 1rem;
+        }
+        
+        /* Container width */
+        .main-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # Simple step indicator
+    st.markdown(f"**Step {st.session_state.checkout_step} of 2:** {'Shipping Details' if st.session_state.checkout_step == 1 else 'Payment'}")
+
+    # Order Summary - Always visible but simplified
+    with st.sidebar:
+        st.subheader("Order Summary")
+        
+        for item in st.session_state.cart_items:
+            st.write(f"{item['title']} - ${item['price']:.2f}")
+        
+        st.divider()
+        
+        if 'shipping_method' in st.session_state:
+            if "Express" in st.session_state.shipping_method:
+                shipping_cost = 9.99
+            elif "Next Day" in st.session_state.shipping_method:
+                shipping_cost = 19.99
+
+        st.write(f"Subtotal: ${total:.2f}")
+        st.write(f"Shipping: ${shipping_cost:.2f}")
+        st.write(f"**Total: ${(total + shipping_cost):.2f}**")
+
+    # Step 1: Shipping Information
+    if st.session_state.checkout_step == 1:
+        with st.form("shipping_form"):
+            # Contact Information
+            st.subheader("Contact Information")
+            col1, col2 = st.columns([1, 2])
+            with col1:
+                email = st.text_input("Email")
+            with col2:
+                phone = st.text_input("Phone")
+            
+            # Shipping Information
+            st.subheader("Shipping Address")
+            col1, col2 = st.columns(2)
+            with col1:
+                first_name = st.text_input("First Name")
+            with col2:
+                last_name = st.text_input("Last Name")
+            
+            address = st.text_input("Street Address")
+            apartment = st.text_input("Apartment, suite, etc. (optional)")
+            
+            col1, col2, col3 = st.columns([2, 1, 1])
+            with col1:
+                city = st.text_input("City")
+            with col2:
+                state = st.text_input("State")
+            with col3:
+                zip_code = st.text_input("ZIP")
+            
+            # Shipping Method - Simplified options
+            st.subheader("Shipping Method")
+            shipping_method = st.radio(
+                "Select Shipping Method",
+                ["Standard (Free)",
+                 "Express ($9.99)",
+                 "Next Day ($19.99)"]
+            )
+            
+            st.session_state.shipping_method = shipping_method
+            
+            # Continue button
+            if st.form_submit_button("Continue to Payment"):
+                if all([email, first_name, last_name, address, city, state, zip_code, phone]):
+                    st.session_state.shipping_info = {
+                        'email': email,
+                        'first_name': first_name,
+                        'last_name': last_name,
+                        'address': address,
+                        'apartment': apartment,
+                        'city': city,
+                        'state': state,
+                        'zip_code': zip_code,
+                        'phone': phone,
+                        'shipping_method': shipping_method
+                    }
+                    st.session_state.checkout_step = 2
+                    st.rerun()
+                else:
+                    st.error("Please fill in all required fields")
+
+    # Step 2: Payment
+    elif st.session_state.checkout_step == 2:
+        # Simplified shipping info review
+        st.write("**Shipping to:**", 
+                f"{st.session_state.shipping_info['first_name']} {st.session_state.shipping_info['last_name']}, "
+                f"{st.session_state.shipping_info['address']}, "
+                f"{st.session_state.shipping_info['city']}, {st.session_state.shipping_info['state']}")
+        
+        if st.button("← Edit Shipping Info", use_container_width=False):
+            st.session_state.checkout_step = 1
+            st.rerun()
+        
+        st.divider()
+        
+        # Payment form
+        with st.form("payment_form"):
+            st.subheader("Payment Details")
+            card_number = st.text_input("Card Number")
+            col1, col2 = st.columns(2)
+            with col1:
+                expiry = st.text_input("Expiry (MM/YY)")
+            with col2:
+                cvv = st.text_input("CVV")
+
+            # Simplified billing address
+            same_as_shipping = st.checkbox("Billing address same as shipping", value=True)
+            
+            if not same_as_shipping:
+                billing_address = st.text_input("Billing Address")
+                col1, col2 = st.columns(2)
+                with col1:
+                    billing_city = st.text_input("City")
+                with col2:
+                    billing_state = st.text_input("State")
+                billing_zip = st.text_input("ZIP")
+
+            # Place Order button
+            if st.form_submit_button("Place Order"):
+                if all([card_number, expiry, cvv]):
+                    st.success("Order placed successfully!")
+                    st.balloons()
+                    st.session_state.cart_items = []
+                    st.session_state.checkout_step = 1
+                    if 'shipping_info' in st.session_state:
+                        del st.session_state.shipping_info
+                    st.session_state.active_tab = "Browse"
+                    st.rerun()
+                else:
+                    st.error("Please fill in all payment details")
 
 def profile_page():
     st.header("My Profile")
@@ -986,6 +1171,8 @@ def main():
             login_page()
     elif st.session_state.active_tab == "Cart":
         cart_page()
+    elif st.session_state.active_tab == "Checkout":
+        checkout_page()
     elif st.session_state.active_tab == "Profile":
         profile_page()
 
